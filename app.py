@@ -17,12 +17,16 @@ st.set_page_config(
 API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
-client = None
-if API_KEY:
-    try:
-        client = genai.Client(api_key=API_KEY.strip())
-    except Exception:
-        client = None
+@st.cache_resource
+def obtener_cliente_gemini(api_key):
+    if api_key:
+        try:
+            return genai.Client(api_key=api_key.strip())
+        except Exception:
+            return None
+    return None
+
+client = obtener_cliente_gemini(API_KEY)
 
 # --- CARGA DE DATOS DESDE DRIVE ---
 @st.cache_data
@@ -32,7 +36,7 @@ def cargar_datos_drive(file_id):
     if not os.path.exists(archivo_local):
         url_drive = f"https://drive.google.com/uc?id={file_id}"
         try:
-            with st.spinner("Descargando base de datos..."):
+            with st.spinner("Cargando base de datos por primera vez..."):
                 gdown.download(url_drive, archivo_local, quiet=False)
         except Exception as e:
             return {}, f"Error al descargar desde Drive: {e}"
@@ -57,11 +61,11 @@ def cargar_datos_drive(file_id):
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
 # --- CABECERA VISUAL ---
-col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
+col_img1, col_img2, col_img3 = st.columns([1.8, 1, 1.8])
 with col_img2:
-    # URL directa e incrustada para evitar bloqueos de imagen
+    # URL directa de Wikipedia estable para la imagen del Rebe
     st.image(
-        "https://raw.githubusercontent.com/streamlit/30days-site/main/static/favicon.png", # Reemplazar si tienes assets locales
+        "https://upload.wikimedia.org/wikipedia/commons/e/e6/Rabbi_Menachem_Mendel_Schneerson.jpg",
         caption="Menachem Mendel Schneerson - El Rebe de Lubavitch",
         use_container_width=True
     )
@@ -70,13 +74,22 @@ st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>"
 st.markdown("<p style='text-align: center; color: gray;'>Explora la correspondencia del Rebe por tema, palabras clave, fecha o tomo.</p>", unsafe_allow_html=True)
 st.divider()
 
-# --- FILTROS PRINCIPALES Y BUSCADOR (SIN BARRA LATERAL) ---
-col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1.5, 1, 1])
+# --- ESTADO DE SESIÓN ---
+if "query_activa" not in st.session_state:
+    st.session_state["query_activa"] = ""
+
+# --- FILTROS PRINCIPALES Y BUSCADOR ---
+col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
 
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Todos"]
 
 with col_f1:
-    query = st.text_input("Ingrese tema, concepto o ID de carta:", placeholder="Ej: Educación, Salud, Bendición...", key="input_query")
+    query = st.text_input(
+        "Ingrese tema, concepto o ID de carta:",
+        value=st.session_state["query_activa"],
+        placeholder="Ej: Educación, Salud, Bendición...",
+        key="input_query"
+    )
 
 with col_f2:
     filtro_fecha = st.text_input("Filtrar por año/fecha:", placeholder="Ej: תש''ה, 1945...", key="input_fecha")
@@ -87,7 +100,7 @@ with col_f3:
 with col_f4:
     cant_cartas = st.selectbox("Mostrar:", [3, 5, 10, 20, 50], index=1)
 
-# Opciones secundarias alineadas
+# Opciones secundarias
 col_opt1, col_opt2 = st.columns([2, 2])
 with col_opt1:
     generar_traduccion = st.checkbox("Traducción e Interpretación con IA", value=True)
@@ -98,28 +111,29 @@ with col_opt2:
         disabled=not generar_traduccion
     )
 
-# --- BOTONES DE BÚSQUEDA RÁPIDA POR TEMAS POPULARES ---
-st.write("📌 **Búsquedas rápidas:**")
+# --- BOTONES DE BÚSQUEDA RÁPIDA ---
+st.write("📌 **Búsquedas rápidas por tema:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
 
-tema_rapido = None
 if col_b1.button("🩺 Salud", use_container_width=True):
-    tema_rapido = "Salud"
+    st.session_state["query_activa"] = "Salud"
+    st.rerun()
 if col_b2.button("🎓 Educación", use_container_width=True):
-    tema_rapido = "Educacion"
+    st.session_state["query_activa"] = "Educación"
+    st.rerun()
 if col_b3.button("✨ Bendición", use_container_width=True):
-    tema_rapido = "Bendicion"
+    st.session_state["query_activa"] = "Bendición"
+    st.rerun()
 if col_b4.button("💼 Trabajo", use_container_width=True):
-    tema_rapido = "Trabajo"
+    st.session_state["query_activa"] = "Trabajo"
+    st.rerun()
 if col_b5.button("💍 Matrimonio", use_container_width=True):
-    tema_rapido = "Matrimonio"
-if col_b6.button("📜 Ver Todas", use_container_width=True):
-    tema_rapido = ""
+    st.session_state["query_activa"] = "Matrimonio"
+    st.rerun()
+if col_b6.button("📜 Limpiar", use_container_width=True):
+    st.session_state["query_activa"] = ""
+    st.rerun()
 
-# Determinar consulta activa
-consulta_activa = tema_rapido if tema_rapido is not None else query
-
-# --- BOTÓN DE BÚSQUEDA ---
 st.markdown("---")
 btn_buscar = st.button("🔍 Buscar Cartas", type="primary", use_container_width=True)
 
@@ -156,7 +170,8 @@ def obtener_conceptos_hebreo(consulta):
             
     return [consulta_clean]
 
-def traducir_carta(contenido, idioma, tema):
+@st.cache_data(show_spinner=False)
+def traducir_carta_cached(contenido, idioma, tema):
     if not client:
         return "⚠️ *Servicio de IA no disponible. Configura la clave GEMINI_API_KEY en los Secrets de Streamlit Cloud.*"
         
@@ -180,17 +195,17 @@ def traducir_carta(contenido, idioma, tema):
         return f"⚠️ Error de la API al traducir: {e}"
 
 # --- LÓGICA DE BÚSQUEDA Y RESULTADOS ---
-if btn_buscar or tema_rapido is not None:
+consulta_efectiva = query or st.session_state["query_activa"]
+
+if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todos":
     if not base_datos:
         st.error("La base de datos de cartas no está cargada.")
     else:
-        st.info("Buscando coincidencias...")
+        es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_efectiva)) if consulta_efectiva else False
+        terminos = [consulta_efectiva.lower()] if es_hebreo else obtener_conceptos_hebreo(consulta_efectiva)
         
-        es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_activa)) if consulta_activa else False
-        terminos = [consulta_activa.lower()] if es_hebreo else obtener_conceptos_hebreo(consulta_activa)
-        
-        if consulta_activa:
-            st.write(f"🎯 **Términos de búsqueda aplicados:** {', '.join(terminos)}")
+        if consulta_efectiva:
+            st.write(f"🎯 **Términos de búsqueda aplicados:** `{', '.join(terminos)}`")
 
         resultados = []
         for tomo, info in base_datos.items():
@@ -202,7 +217,6 @@ if btn_buscar or tema_rapido is not None:
                 texto_lower = texto.lower()
                 id_carta = str(carta.get("id_carta", "")).lower()
                 
-                # Precisión: Búsqueda por término/ID o flexible si no hay texto
                 coincide_termino = any(t in texto_lower or t == id_carta for t in terminos) if terminos else True
                 coincide_fecha = (filtro_fecha.lower() in texto_lower or filtro_fecha.lower() in tomo.lower()) if filtro_fecha else True
                 
@@ -233,7 +247,8 @@ if btn_buscar or tema_rapido is not None:
                         
                         with col2:
                             st.subheader(f"Traducción Abierta ({idioma_destino})")
-                            traduccion = traducir_carta(res['contenido'], idioma_destino, consulta_activa or filtro_fecha or "General")
+                            with st.spinner("Interpretando texto..."):
+                                traduccion = traducir_carta_cached(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
             st.warning("No se encontraron cartas que coincidan con los criterios seleccionados.")
