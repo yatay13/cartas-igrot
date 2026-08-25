@@ -2,6 +2,7 @@ import json
 import os
 import re
 import zipfile
+import urllib.request
 import streamlit as st
 from google import genai
 
@@ -15,38 +16,45 @@ st.set_page_config(
 st.title("📜 Traductor de Igrot Kodesh")
 st.caption("Consulte las cartas por tema, palabras clave, fecha o tomo con interpretación y traducción asistida por IA.")
 
-# --- CARGA DE DATOS (JSON O ZIP) ---
-@st.cache_data
-def cargar_datos():
-    base_datos = {}
-    archivo_encontrado = None
-    
-    archivos = os.listdir('.')
-    zips = [f for f in archivos if f.endswith('.zip')]
-    jsons = [f for f in archivos if f.endswith('.json')]
-    
-    if zips:
-        try:
-            with zipfile.ZipFile(zips[0], 'r') as z:
-                nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
-                if nombres_json:
-                    with z.open(nombres_json[0]) as f:
-                        base_datos = json.load(f)
-                        archivo_encontrado = f"{zips[0]} ({nombres_json[0]})"
-        except Exception as e:
-            st.error(f"Error al abrir el archivo ZIP: {e}")
-            
-    elif jsons:
-        try:
-            with open(jsons[0], "r", encoding="utf-8") as f:
-                base_datos = json.load(f)
-                archivo_encontrado = jsons[0]
-        except Exception as e:
-            st.error(f"Error al abrir el archivo JSON: {e}")
-            
-    return base_datos, archivo_encontrado
+# ⚠️ PEGA AQUÍ EL ID DE TU ARCHIVO DE GOOGLE DRIVE:
+ID_DRIVE = "TU_ID_DE_GOOGLE_DRIVE_AQUI" 
 
-base_datos, nombre_archivo = cargar_datos()
+@st.cache_data
+def cargar_datos_drive(file_id):
+    if file_id == "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk":
+        return {}, "Falta ingresar el ID de Google Drive"
+        
+    url_descarga = f"https://drive.google.com/uc?export=download&id={file_id}"
+    archivo_local = "base_datos_descargada"
+    
+    # Descargar si no existe localmente en el servidor
+    if not os.path.exists(archivo_local):
+        with st.spinner("Descargando base de datos por primera vez (esto puede tomar unos segundos)..."):
+            try:
+                urllib.request.urlretrieve(url_descarga, archivo_local)
+            except Exception as e:
+                return {}, f"Error al descargar desde Drive: {e}"
+                
+    # Intentar leer como JSON directo
+    try:
+        with open(archivo_local, "r", encoding="utf-8") as f:
+            return json.load(f), "Google Drive (JSON)"
+    except Exception:
+        pass
+
+    # Intentar leer como ZIP
+    try:
+        with zipfile.ZipFile(archivo_local, 'r') as z:
+            nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
+            if nombres_json:
+                with z.open(nombres_json[0]) as f:
+                    return json.load(f), "Google Drive (ZIP)"
+    except Exception as e:
+        return {}, f"El archivo descargado no es un JSON ni ZIP válido: {e}"
+
+    return {}, "Formato desconocido"
+
+base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
 # --- BARRA LATERAL: CONFIGURACIÓN ---
 st.sidebar.header("🔑 Configuración")
@@ -67,9 +75,9 @@ tomo_seleccionado = st.sidebar.selectbox("Filtrar por Tomo:", tomos_disponibles)
 filtro_fecha = st.sidebar.text_input("Filtrar por rango de fechas/años (opcional):", placeholder="Ej: תש''ה o 1945")
 
 if base_datos:
-    st.sidebar.info(f"📁 Base de datos cargada: {len(base_datos)} tomos desde `{nombre_archivo}`")
+    st.sidebar.info(f"📁 Base de datos cargada: {len(base_datos)} tomos desde `{origen_datos}`")
 else:
-    st.sidebar.error("⚠️ No se encontró la base de datos de cartas (JSON/ZIP). Verifique que esté subida a GitHub.")
+    st.sidebar.error(f"⚠️ {origen_datos}")
 
 # --- DICCIONARIO LOCAL DE RESPALDO ---
 DICCIONARIO_RESPALDO = {
@@ -132,7 +140,7 @@ if st.button("🔍 Buscar y Analizar", type="primary"):
     if not query:
         st.warning("Por favor ingrese un término de búsqueda.")
     elif not base_datos:
-        st.error("No se encontró la base de datos de cartas (suba el archivo ZIP/JSON a GitHub).")
+        st.error("No se pudo cargar la base de datos de cartas.")
     else:
         st.info("Procesando búsqueda...")
         
