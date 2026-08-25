@@ -1,4 +1,4 @@
-        import json
+import json
 import os
 import re
 import zipfile
@@ -24,7 +24,6 @@ def cargar_datos():
     # 1. Intentar cargar desde ZIP si existe
     if os.path.exists(ruta_zip):
         with zipfile.ZipFile(ruta_zip, 'r') as z:
-            # Buscar el archivo json dentro del zip
             archivos_json = [f for f in z.namelist() if f.endswith('.json')]
             if archivos_json:
                 with z.open(archivos_json[0]) as f:
