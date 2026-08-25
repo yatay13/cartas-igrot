@@ -2,7 +2,7 @@ import json
 import os
 import re
 import zipfile
-import urllib.request
+import gdown
 import streamlit as st
 from google import genai
 
@@ -16,33 +16,30 @@ st.set_page_config(
 st.title("📜 Traductor de Igrot Kodesh")
 st.caption("Consulte las cartas por tema, palabras clave, fecha o tomo con interpretación y traducción asistida por IA.")
 
-# ⚠️ PEGA AQUÍ EL ID DE TU ARCHIVO DE GOOGLE DRIVE:
-ID_DRIVE = "TU_ID_DE_GOOGLE_DRIVE_AQUI" 
+# --- ID DE GOOGLE DRIVE CONFIGURADO ---
+ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk" 
 
 @st.cache_data
 def cargar_datos_drive(file_id):
-    if file_id == "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk":
-        return {}, "Falta ingresar el ID de Google Drive"
-        
-    url_descarga = f"https://drive.google.com/uc?export=download&id={file_id}"
     archivo_local = "base_datos_descargada"
     
-    # Descargar si no existe localmente en el servidor
+    # Descargar mediante gdown si aún no existe en el servidor
     if not os.path.exists(archivo_local):
-        with st.spinner("Descargando base de datos por primera vez (esto puede tomar unos segundos)..."):
-            try:
-                urllib.request.urlretrieve(url_descarga, archivo_local)
-            except Exception as e:
-                return {}, f"Error al descargar desde Drive: {e}"
-                
-    # Intentar leer como JSON directo
+        url_drive = f"https://drive.google.com/uc?id={file_id}"
+        try:
+            with st.spinner("Descargando base de datos desde Drive por primera vez..."):
+                gdown.download(url_drive, archivo_local, quiet=False)
+        except Exception as e:
+            return {}, f"Error al descargar desde Drive: {e}"
+
+    # 1. Intentar leer como JSON directo
     try:
         with open(archivo_local, "r", encoding="utf-8") as f:
             return json.load(f), "Google Drive (JSON)"
     except Exception:
         pass
 
-    # Intentar leer como ZIP
+    # 2. Intentar leer como archivo ZIP comprimido
     try:
         with zipfile.ZipFile(archivo_local, 'r') as z:
             nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
@@ -50,7 +47,7 @@ def cargar_datos_drive(file_id):
                 with z.open(nombres_json[0]) as f:
                     return json.load(f), "Google Drive (ZIP)"
     except Exception as e:
-        return {}, f"El archivo descargado no es un JSON ni ZIP válido: {e}"
+        return {}, f"El archivo descargado no es un JSON o ZIP válido: {e}"
 
     return {}, "Formato desconocido"
 
