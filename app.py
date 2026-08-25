@@ -1,6 +1,7 @@
-import json
+        import json
 import os
 import re
+import zipfile
 import streamlit as st
 from google import genai
 
@@ -14,14 +15,26 @@ st.set_page_config(
 st.title("📜 Buscador y Traductor de Igrot Kodesh")
 st.caption("Consulte las cartas por tema, palabras clave, fecha o tomo con interpretación y traducción asistida por IA.")
 
-# --- CARGA DE DATOS ---
+# --- CARGA DE DATOS (JSON o ZIP) ---
 @st.cache_data
 def cargar_datos():
-    # Ajusta la ruta a tu archivo JSON local o de servidor
-    ruta = "igrot_kodesh_cartas.json" 
-    if os.path.exists(ruta):
-        with open(ruta, "r", encoding="utf-8") as f:
+    ruta_json = "igrot_kodesh_cartas.json"
+    ruta_zip = "igrot_kodesh_cartas.zip"
+    
+    # 1. Intentar cargar desde ZIP si existe
+    if os.path.exists(ruta_zip):
+        with zipfile.ZipFile(ruta_zip, 'r') as z:
+            # Buscar el archivo json dentro del zip
+            archivos_json = [f for f in z.namelist() if f.endswith('.json')]
+            if archivos_json:
+                with z.open(archivos_json[0]) as f:
+                    return json.load(f)
+                    
+    # 2. Intentar cargar desde el JSON descomprimido
+    elif os.path.exists(ruta_json):
+        with open(ruta_json, "r", encoding="utf-8") as f:
             return json.load(f)
+            
     return {}
 
 base_datos = cargar_datos()
@@ -87,7 +100,7 @@ if st.button("🔎 Buscar y Analizar", type="primary"):
     if not query:
         st.warning("Por favor ingrese un término de búsqueda.")
     elif not base_datos:
-        st.error("No se encontró el archivo JSON con los datos.")
+        st.error("No se encontró la base de datos de cartas (igrot_kodesh_cartas.zip).")
     else:
         st.info("Procesando búsqueda...")
         
