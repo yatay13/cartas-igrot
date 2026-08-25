@@ -60,15 +60,15 @@ def cargar_datos_drive(file_id):
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
-# --- CABECERA VISUAL ---
-col_img1, col_img2, col_img3 = st.columns([1.8, 1, 1.8])
+# --- CABECERA VISUAL CON LA IMAGEN ---
+col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
 with col_img2:
-    # URL directa de Wikipedia estable para la imagen del Rebe
-    st.image(
-        "https://upload.wikimedia.org/wikipedia/commons/e/e6/Rabbi_Menachem_Mendel_Schneerson.jpg",
-        caption="Menachem Mendel Schneerson - El Rebe de Lubavitch",
-        use_container_width=True
-    )
+    if os.path.exists("rebe.jpg"):
+        st.image("rebe.jpg", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
+    elif os.path.exists("rebe.png"):
+        st.image("rebe.png", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
+    else:
+        st.warning("Para ver la imagen, guarda el archivo como 'rebe.jpg' en el repositorio de GitHub.")
 
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Explora la correspondencia del Rebe por tema, palabras clave, fecha o tomo.</p>", unsafe_allow_html=True)
@@ -137,7 +137,7 @@ if col_b6.button("📜 Limpiar", use_container_width=True):
 st.markdown("---")
 btn_buscar = st.button("🔍 Buscar Cartas", type="primary", use_container_width=True)
 
-# --- DICCIONARIO LOCAL Y FUNCIONES DE PRECISIÓN ---
+# --- DICCIONARIO LOCAL Y FUNCIONES ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא"],
     "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה"],
@@ -252,3 +252,27 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                             st.markdown(traduccion)
         else:
             st.warning("No se encontraron cartas que coincidan con los criterios seleccionados.")
+
+# --- FOOTER / MARCA DE AGUA ---
+st.markdown("""
+    <style>
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: rgba(15, 23, 42, 0.9);
+        color: #94a3b8;
+        text-align: center;
+        padding: 8px 0px;
+        font-size: 13px;
+        font-weight: bold;
+        letter-spacing: 0.5px;
+        border-top: 1px solid #334155;
+        z-index: 999;
+    }
+    </style>
+    <div class="footer">
+        Hecho por: Ariel Lichinizer y Eitan Embon
+    </div>
+""", unsafe_allow_html=True)
