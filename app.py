@@ -214,8 +214,7 @@ def obtener_conceptos_hebreo(consulta):
         Responde ÚNICAMENTE las palabras en hebreo/iídish separadas por comas.
         """
         try:
-            # Modelo rápido para extracción de conceptos
-            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
@@ -246,8 +245,8 @@ def traducir_carta_premium(contenido, idioma, tema):
     4. **Glosario de Términos Rabínicos**: Explica de 2 a 4 conceptos en hebreo/iídish presentes en el texto original.
     """
     try:
-        # Modelo Flagship de razonamiento profundo
-        res = client.models.generate_content(model='gemini-2.5-pro', contents=prompt)
+        # Actualizado a gemini-3.6-pro para razonamiento profundo
+        res = client.models.generate_content(model='gemini-3.6-pro', contents=prompt)
         return res.text
     except Exception as e:
         return f"⚠️ Error en el motor de IA Pro: {e}"
@@ -307,7 +306,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                         
                         with col2:
                             st.subheader(f"Análisis e Interpretación ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis profundo con Gemini 2.5 Pro..."):
+                            with st.spinner("🤖 Procesando análisis profundo con Gemini 3.6 Pro..."):
                                 traduccion = traducir_carta_premium(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
