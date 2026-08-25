@@ -82,6 +82,32 @@ def obtener_cliente_gemini(api_key):
 
 client = obtener_cliente_gemini(API_KEY)
 
+# --- DETECCION DINÁMICA DE MODELOS DISPONIBLES ---
+@st.cache_resource
+def obtener_modelos_disponibles():
+    if not client:
+        return None, None
+    try:
+        modelos = [m.name for m in client.models.list() if "generateContent" in getattr(m, "supported_actions", getattr(m, "supported_generation_methods", []))]
+        
+        # Buscar el mejor modelo Flash disponible
+        flash_model = next((m for m in modelos if "flash" in m.lower()), None)
+        # Buscar el mejor modelo Pro disponible
+        pro_model = next((m for m in modelos if "pro" in m.lower()), None)
+        
+        # Fallbacks si no detecta por palabra clave
+        if not flash_model and modelos:
+            flash_model = modelos[0]
+        if not pro_model:
+            pro_model = flash_model
+            
+        return pro_model, flash_model
+    except Exception:
+        # Respaldos directos en caso de que falle el listado
+        return "models/gemini-3.6-pro", "models/gemini-3.6-flash"
+
+MODELO_PRO, MODELO_FLASH = obtener_modelos_disponibles()
+
 # --- CARGA DE DATOS OPTIMIZADA ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_datos_drive(file_id):
@@ -207,14 +233,14 @@ DICCIONARIO_RESPALDO = {
 def obtener_conceptos_hebreo(consulta):
     if not consulta:
         return []
-    if client:
+    if client and MODELO_FLASH:
         prompt = f"""
         Como erudito en la literatura de Chabad e Igrot Kodesh, analiza este tema: '{consulta}'.
         Proporciona entre 5 y 8 términos clave exactos en HEBREO e IÍDISH asociados comunitariamente o rabínicamente a este tema.
         Responde ÚNICAMENTE las palabras en hebreo/iídish separadas por comas.
         """
         try:
-            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            res = client.models.generate_content(model=MODELO_FLASH, contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
@@ -245,17 +271,16 @@ def traducir_carta_premium(contenido, idioma, tema):
     4. **Glosario de Términos Rabínicos**: Explica de 2 a 4 conceptos en hebreo/iídish presentes en el texto original.
     """
     
-    # Intento 1: Modelo Flagship Pro
-    try:
-        res = client.models.generate_content(model='gemini-2.5-pro', contents=prompt)
-        return res.text
-    except Exception:
-        # Intento 2 (Fallback): Si Pro no está disponible o falla, usa Flash automáticamente
+    modelos_a_probar = [m for m in [MODELO_PRO, MODELO_FLASH, "models/gemini-3.6-flash", "models/gemini-3.6-pro"] if m]
+    
+    for modelo in modelos_a_probar:
         try:
-            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            res = client.models.generate_content(model=modelo, contents=prompt)
             return res.text
-        except Exception as e:
-            return f"⚠️ Error en la respuesta de la IA: {e}"
+        except Exception:
+            continue
+            
+    return "⚠️ *No se pudo establecer conexión con ningún modelo activo de la API. Verifica los permisos de tu clave de API.*"
 
 # --- EJECUCIÓN DE BÚSQUEDA Y RESULTADOS ---
 consulta_efectiva = query or st.session_state["query_activa"]
@@ -312,7 +337,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                         
                         with col2:
                             st.subheader(f"Análisis e Interpretación ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis con Gemini IA..."):
+                            with st.spinner("🤖 Procesando análisis con IA..."):
                                 traduccion = traducir_carta_premium(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
