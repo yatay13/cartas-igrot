@@ -8,38 +8,45 @@ from google import genai
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Buscador Inteligente - Igrot Kodesh",
+    page_title="Igrot Kodesh - Buscador Inteligente",
     page_icon="📜",
     layout="wide"
 )
 
-st.title("📜 Traductor de Igrot Kodesh")
-st.caption("Consulte las cartas por tema, palabras clave, fecha o tomo con interpretación y traducción asistida por IA.")
+# --- OBTENCIÓN SEGURA DE LA API KEY ---
+# Busca la clave en los Secrets de Streamlit o en variables de entorno local
+API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
-# --- ID DE GOOGLE DRIVE CONFIGURADO ---
-ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk" 
+# Inicializar cliente Gemini de forma transparente
+client = None
+if API_KEY:
+    try:
+        client = genai.Client(api_key=API_KEY.strip())
+    except Exception:
+        client = None
 
+# --- CARGA DE DATOS DESDE DRIVE ---
 @st.cache_data
 def cargar_datos_drive(file_id):
     archivo_local = "base_datos_descargada"
     
-    # Descargar mediante gdown si aún no existe en el servidor
     if not os.path.exists(archivo_local):
         url_drive = f"https://drive.google.com/uc?id={file_id}"
         try:
-            with st.spinner("Descargando base de datos desde Drive por primera vez..."):
+            with st.spinner("Descargando base de datos por primera vez..."):
                 gdown.download(url_drive, archivo_local, quiet=False)
         except Exception as e:
             return {}, f"Error al descargar desde Drive: {e}"
 
-    # 1. Intentar leer como JSON directo
+    # 1. Intentar leer JSON
     try:
         with open(archivo_local, "r", encoding="utf-8") as f:
             return json.load(f), "Google Drive (JSON)"
     except Exception:
         pass
 
-    # 2. Intentar leer como archivo ZIP comprimido
+    # 2. Intentar leer ZIP
     try:
         with zipfile.ZipFile(archivo_local, 'r') as z:
             nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
@@ -47,36 +54,49 @@ def cargar_datos_drive(file_id):
                 with z.open(nombres_json[0]) as f:
                     return json.load(f), "Google Drive (ZIP)"
     except Exception as e:
-        return {}, f"El archivo descargado no es un JSON o ZIP válido: {e}"
+        return {}, f"Error al procesar el archivo: {e}"
 
-    return {}, "Formato desconocido"
+    return {}, "Formato no compatible"
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
-# --- BARRA LATERAL: CONFIGURACIÓN ---
-st.sidebar.header("🔑 Configuración")
-api_key_input = st.sidebar.text_input("Gemini API Key:", type="password", help="Pega aquí tu clave que empieza por AIzaSy...")
-idioma_destino = st.sidebar.selectbox("Idioma de traducción:", ["Hebreo Moderno", "Español", "English", "Français", "Português", "Ruso"])
+# --- CABECERA VISUAL ---
+col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+with col_img2:
+    st.image(
+        "https://upload.wikimedia.org/wikipedia/commons/e/e6/Rabbi_Menachem_Mendel_Schneerson.jpg",
+        caption="Menachem Mendel Schneerson - El Rebe de Lubavitch",
+        use_container_width=True
+    )
 
-client = None
-if api_key_input:
-    try:
-        client = genai.Client(api_key=api_key_input.strip())
-        st.sidebar.success("API Key conectada")
-    except Exception as e:
-        st.sidebar.error("Error al inicializar la API Key")
+st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>Explora la correspondencia del Rebe por tema, palabras clave, fecha o tomo.</p>", unsafe_allow_html=True)
+st.divider()
 
-st.sidebar.header("🔍 Filtros de Búsqueda")
+# --- BARRA LATERAL: CONFIGURACIÓN Y FILTROS ---
+st.sidebar.header("⚙️ Opciones de Consulta")
+
+generar_traduccion = st.sidebar.checkbox("Traducción e Interpretación con IA", value=True)
+
+idioma_destino = "Español"
+if generar_traduccion:
+    idioma_destino = st.sidebar.selectbox(
+        "Idioma de traducción:",
+        ["Español", "Hebreo Moderno", "English", "Français", "Português", "Ruso"]
+    )
+
+cant_cartas = st.sidebar.selectbox("Cantidad de cartas a traer:", [3, 5, 10, 20], index=1)
+
+st.sidebar.header("📁 Filtros Adicionales")
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Todos"]
 tomo_seleccionado = st.sidebar.selectbox("Filtrar por Tomo:", tomos_disponibles)
-filtro_fecha = st.sidebar.text_input("Filtrar por rango de fechas/años (opcional):", placeholder="Ej: תש''ה o 1945")
 
 if base_datos:
-    st.sidebar.info(f"📁 Base de datos cargada: {len(base_datos)} tomos desde `{origen_datos}`")
+    st.sidebar.success(f"Base de datos activa: {len(base_datos)} tomos cargados.")
 else:
-    st.sidebar.error(f"⚠️ {origen_datos}")
+    st.sidebar.error("Error al cargar la base de datos.")
 
-# --- DICCIONARIO LOCAL DE RESPALDO ---
+# --- FUNCIONES DE BÚSQUEDA E IA ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא"],
     "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה"],
@@ -90,7 +110,7 @@ DICCIONARIO_RESPALDO = {
 def obtener_conceptos_hebreo(consulta):
     if client:
         prompt = f"""
-        El usuario busca en una colección de cartas rabínicas (Igrot Kodesh) sobre: '{consulta}'.
+        El usuario busca en cartas rabínicas (Igrot Kodesh) sobre: '{consulta}'.
         Genera 5 a 8 palabras o frases equivalentes en HEBREO e IÍDISH que suelan aparecer en este tipo de textos.
         Responde ÚNICAMENTE las palabras en hebreo separadas por comas.
         """
@@ -109,7 +129,7 @@ def obtener_conceptos_hebreo(consulta):
 
 def traducir_carta(contenido, idioma, tema):
     if not client:
-        return "⚠️ *Verifica tu Gemini API Key en el panel lateral para ver la traducción asistida por IA.*"
+        return "⚠️ *Servicio de IA no disponible. Configura la clave GEMINI_API_KEY en los Secrets de Streamlit Cloud.*"
         
     prompt = f"""
     Eres un experto erudito en hebreo clásico, hebreo rabínico e iídish.
@@ -130,21 +150,31 @@ def traducir_carta(contenido, idioma, tema):
     except Exception as e:
         return f"⚠️ Error de la API al traducir: {e}"
 
-# --- INTERFAZ PRINCIPAL DE BÚSQUEDA ---
-query = st.text_input("Ingrese tema, concepto, número de carta o palabras clave:", placeholder="Ej: Educación, Salud, Bendición...")
+# --- BUSCADOR PRINCIPAL CON FILTRO DE FECHAS ---
+col_search1, col_search2 = st.columns([3, 1.5])
 
-if st.button("🔍 Buscar y Analizar", type="primary"):
-    if not query:
-        st.warning("Por favor ingrese un término de búsqueda.")
+with col_search1:
+    query = st.text_input("Ingrese tema, concepto o palabras clave:", placeholder="Ej: Educación, Salud, Bendición...")
+
+with col_search2:
+    filtro_fecha = st.text_input("Filtrar por año/fecha (Opcional):", placeholder="Ej: תש''ה, 1945...")
+
+btn_buscar = st.button("🔍 Buscar y Analizar", type="primary", use_container_width=True)
+
+# --- LÓGICA DE BÚSQUEDA Y RESULTADOS ---
+if btn_buscar:
+    if not query and not filtro_fecha:
+        st.warning("Por favor ingrese un término de búsqueda o un filtro por fecha.")
     elif not base_datos:
-        st.error("No se pudo cargar la base de datos de cartas.")
+        st.error("La base de datos de cartas no está cargada.")
     else:
-        st.info("Procesando búsqueda...")
+        st.info("Buscando coincidencias...")
         
-        es_hebreo = bool(re.search(r'[\u0590-\u05FF]', query))
-        terminos = [query.lower()] if es_hebreo else obtener_conceptos_hebreo(query)
+        es_hebreo = bool(re.search(r'[\u0590-\u05FF]', query)) if query else False
+        terminos = [query.lower()] if es_hebreo or not query else obtener_conceptos_hebreo(query)
         
-        st.write(f"🎯 **Términos de búsqueda aplicados:** {', '.join(terminos)}")
+        if query:
+            st.write(f"🎯 **Términos conceptuales buscados:** {', '.join(terminos)}")
 
         resultados = []
         for tomo, info in base_datos.items():
@@ -156,7 +186,7 @@ if st.button("🔍 Buscar y Analizar", type="primary"):
                 texto_lower = texto.lower()
                 id_carta = carta.get("id_carta", "")
                 
-                coincide_termino = any(t in texto_lower or t == id_carta.lower() for t in terminos)
+                coincide_termino = any(t in texto_lower or t == id_carta.lower() for t in terminos) if query else True
                 coincide_fecha = (filtro_fecha.lower() in texto_lower or filtro_fecha.lower() in tomo.lower()) if filtro_fecha else True
                 
                 if coincide_termino and coincide_fecha:
@@ -165,22 +195,28 @@ if st.button("🔍 Buscar y Analizar", type="primary"):
                         "id_carta": id_carta,
                         "contenido": texto
                     })
-                    if len(resultados) >= 5:
+                    if len(resultados) >= cant_cartas:
                         break
+            if len(resultados) >= cant_cartas:
+                break
 
         if resultados:
-            st.success(f"Se encontraron {len(resultados)} cartas coincidentes.")
+            st.success(f"Se encontraron {len(resultados)} carta(s) coincidente(s).")
+            
             for idx, res in enumerate(resultados, 1):
                 with st.expander(f"📜 Carta {idx}: ID {res['id_carta']} | {res['tomo']}", expanded=True):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
+                    if not generar_traduccion:
                         st.subheader("Texto Original (Hebreo / Iídish)")
-                        st.text_area("Contenido:", res['contenido'], height=300, key=f"orig_{idx}")
-                    
-                    with col2:
-                        st.subheader(f"Traducción Abierta ({idioma_destino})")
-                        traduccion = traducir_carta(res['contenido'], idioma_destino, query)
-                        st.markdown(traduccion)
+                        st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                    else:
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.subheader("Texto Original (Hebreo / Iídish)")
+                            st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                        
+                        with col2:
+                            st.subheader(f"Traducción Abierta ({idioma_destino})")
+                            traduccion = traducir_carta(res['contenido'], idioma_destino, query or filtro_fecha)
+                            st.markdown(traduccion)
         else:
-            st.warning("No se encontraron cartas coincidentes. Intente con otro término de búsqueda.")
+            st.warning("No se encontraron cartas que coincidan con los criterios ingresados.")
