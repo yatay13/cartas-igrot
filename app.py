@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import html
 import zipfile
 import gdown
 import streamlit as st
@@ -8,12 +9,70 @@ from google import genai
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Igrot Kodesh - Buscador Inteligente",
+    page_title="Igrot Kodesh - AI Premium",
     page_icon="📜",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-# --- OBTENCIÓN SEGURA DE LA API KEY Y DATOS ---
+# --- ESTILOS CSS PERSONALIZADOS (UI/UX PREMIUM) ---
+st.markdown("""
+    <style>
+    /* Estilo general */
+    .stApp {
+        background-color: #0f172a;
+        color: #f8fafc;
+    }
+    /* Tarjetas de cartas */
+    .carta-box {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    }
+    /* Insignias de términos */
+    .badge {
+        background-color: #3b82f6;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-block;
+        margin-right: 5px;
+    }
+    /* Footer fijo */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: rgba(15, 23, 42, 0.95);
+        color: #94a3b8;
+        text-align: center;
+        padding: 10px 0px;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        border-top: 1px solid #334155;
+        backdrop-filter: blur(8px);
+        z-index: 999;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- SEGURIDAD: SANITIZACIÓN DE ENTRADAS ---
+def sanitizar_texto(texto: str) -> str:
+    if not texto:
+        return ""
+    # Eliminar posibles inyecciones HTML/JS y caracteres de control
+    clean = html.escape(texto.strip())
+    clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
+    return clean[:200]
+
+# --- OBTENCIÓN SEGURA DE API KEY ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
@@ -28,15 +87,15 @@ def obtener_cliente_gemini(api_key):
 
 client = obtener_cliente_gemini(API_KEY)
 
-# --- CARGA DE DATOS DESDE DRIVE ---
-@st.cache_data
+# --- CARGA DE DATOS OPTIMIZADA ---
+@st.cache_data(ttl=3600, show_spinner=False)
 def cargar_datos_drive(file_id):
     archivo_local = "base_datos_descargada"
     
     if not os.path.exists(archivo_local):
         url_drive = f"https://drive.google.com/uc?id={file_id}"
         try:
-            with st.spinner("Cargando base de datos por primera vez..."):
+            with st.spinner("📦 Cargando base de datos por primera vez..."):
                 gdown.download(url_drive, archivo_local, quiet=False)
         except Exception as e:
             return {}, f"Error al descargar desde Drive: {e}"
@@ -60,39 +119,41 @@ def cargar_datos_drive(file_id):
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
-# --- CABECERA VISUAL CON LA IMAGEN ---
-col_img1, col_img2, col_img3 = st.columns([1.5, 1, 1.5])
+# --- CABECERA VISUAL ---
+col_img1, col_img2, col_img3 = st.columns([1.8, 1, 1.8])
 with col_img2:
     if os.path.exists("rebe.jpg"):
         st.image("rebe.jpg", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
     elif os.path.exists("rebe.png"):
         st.image("rebe.png", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
     else:
-        st.warning("Para ver la imagen, guarda el archivo como 'rebe.jpg' en el repositorio de GitHub.")
+        st.info("💡 Coloca 'rebe.jpg' en el directorio para mostrar la imagen oficial.")
 
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>Explora la correspondencia del Rebe por tema, palabras clave, fecha o tomo.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Exploración e Interpretación de Correspondencia Rabínica.</p>", unsafe_allow_html=True)
 st.divider()
 
 # --- ESTADO DE SESIÓN ---
 if "query_activa" not in st.session_state:
     st.session_state["query_activa"] = ""
 
-# --- FILTROS PRINCIPALES Y BUSCADOR ---
+# --- CONTROLES Y BUSCADOR ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
 
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Todos"]
 
 with col_f1:
-    query = st.text_input(
-        "Ingrese tema, concepto o ID de carta:",
+    raw_query = st.text_input(
+        "Ingrese tema, concepto o ID:",
         value=st.session_state["query_activa"],
         placeholder="Ej: Educación, Salud, Bendición...",
         key="input_query"
     )
+    query = sanitizar_texto(raw_query)
 
 with col_f2:
-    filtro_fecha = st.text_input("Filtrar por año/fecha:", placeholder="Ej: תש''ה, 1945...", key="input_fecha")
+    raw_fecha = st.text_input("Filtrar por año/fecha:", placeholder="Ej: תש''ה, 1945...", key="input_fecha")
+    filtro_fecha = sanitizar_texto(raw_fecha)
 
 with col_f3:
     tomo_seleccionado = st.selectbox("Tomo:", tomos_disponibles)
@@ -100,10 +161,10 @@ with col_f3:
 with col_f4:
     cant_cartas = st.selectbox("Mostrar:", [3, 5, 10, 20, 50], index=1)
 
-# Opciones secundarias
+# Opciones de IA avanzadas
 col_opt1, col_opt2 = st.columns([2, 2])
 with col_opt1:
-    generar_traduccion = st.checkbox("Traducción e Interpretación con IA", value=True)
+    generar_traduccion = st.checkbox("Interpretación Erudita con IA (Modelo Pro)", value=True)
 with col_opt2:
     idioma_destino = st.selectbox(
         "Idioma de traducción:",
@@ -111,8 +172,8 @@ with col_opt2:
         disabled=not generar_traduccion
     )
 
-# --- BOTONES DE BÚSQUEDA RÁPIDA ---
-st.write("📌 **Búsquedas rápidas por tema:**")
+# --- BOTONES DE ACCESO RÁPIDO ---
+st.write("📌 **Categorías Principales:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
 
 if col_b1.button("🩺 Salud", use_container_width=True):
@@ -130,14 +191,14 @@ if col_b4.button("💼 Trabajo", use_container_width=True):
 if col_b5.button("💍 Matrimonio", use_container_width=True):
     st.session_state["query_activa"] = "Matrimonio"
     st.rerun()
-if col_b6.button("📜 Limpiar", use_container_width=True):
+if col_b6.button("🧹 Limpiar", use_container_width=True):
     st.session_state["query_activa"] = ""
     st.rerun()
 
 st.markdown("---")
-btn_buscar = st.button("🔍 Buscar Cartas", type="primary", use_container_width=True)
+btn_buscar = st.button("🔍 Realizar Búsqueda Avanzada", type="primary", use_container_width=True)
 
-# --- DICCIONARIO LOCAL Y FUNCIONES ---
+# --- ENGINE DE BÚSQUEDA E IA AVANZADA ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא"],
     "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה"],
@@ -152,13 +213,14 @@ def obtener_conceptos_hebreo(consulta):
     if not consulta:
         return []
     if client:
+        # Uso del modelo Pro para máxima precisión conceptual
         prompt = f"""
-        El usuario busca en cartas rabínicas (Igrot Kodesh) sobre: '{consulta}'.
-        Genera 5 a 8 palabras o frases equivalentes en HEBREO e IÍDISH que suelan aparecer en este tipo de textos.
-        Responde ÚNICAMENTE las palabras en hebreo separadas por comas.
+        Como erudito en la literatura de Chabad e Igrot Kodesh, analiza este tema: '{consulta}'.
+        Proporciona entre 5 y 8 términos clave exactos en HEBREO e IÍDISH asociados comunitariamente o rabínicamente a este tema.
+        Responde ÚNICAMENTE las palabras en hebreo/iídish separadas por comas.
         """
         try:
-            res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+            res = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
@@ -170,42 +232,45 @@ def obtener_conceptos_hebreo(consulta):
             
     return [consulta_clean]
 
-@st.cache_data(show_spinner=False)
-def traducir_carta_cached(contenido, idioma, tema):
+@st.cache_data(show_spinner=False, ttl=86400)
+def traducir_carta_premium(contenido, idioma, tema):
     if not client:
         return "⚠️ *Servicio de IA no disponible. Configura la clave GEMINI_API_KEY en los Secrets de Streamlit Cloud.*"
         
     prompt = f"""
-    Eres un experto erudito en hebreo clásico, hebreo rabínico e iídish.
+    Eres un Rabino y erudito lingüista de alto nivel, experto en la correspondencia del Rebe de Lubavitch (Igrot Kodesh).
     
-    TEXTO ORIGINAL:
-    {contenido[:3500]}
+    TEXTO ORIGINAL EN HEBREO/IÍDISH:
+    {contenido[:4000]}
 
     Instrucciones para la respuesta en {idioma}:
-    1. Comienza obligatoriamente con esta aclaración:
-       "⚠️ *Nota de Traducción: Esta es una traducción abierta y libre asistida por IA. Debido a los términos conceptuales y modismos rabínicos del original en hebreo/iídish, no debe tomarse como una traducción literal ni un fallo halájico definitivo.*"
-    2. Resumen breve del contenido de la carta y relación con el tema '{tema}'.
-    3. Traducción abierta y fluida al {idioma}.
-    4. Explica 2 o 3 términos clave en hebreo/iídish presentes en el texto.
+    1. Aclaración inicial obligatoria:
+       "⚠️ *Nota de Traducción: Interpretación asistida por IA avanzada. Los conceptos halájicos y marianos deben ser revisados con un Rabino calificado.*"
+    2. **Contexto & Esencia**: Explica brevemente de qué trata la carta y cómo conecta con el tema '{tema}'.
+    3. **Traducción Contextual Fluida**: Traduce el texto al {idioma} manteniendo el tono pastoral, elevado y respetuoso original (evita traducciones literales palabra por palabra que pierdan sentido).
+    4. **Glosario de Términos Rabínicos**: Explica de 2 a 4 conceptos en hebreo/iídish presentes en el texto original.
     """
     try:
-        res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+        # Modelo Gemini 1.5 Pro para calidad máxima
+        res = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
         return res.text
     except Exception as e:
-        return f"⚠️ Error de la API al traducir: {e}"
+        return f"⚠️ Error en el motor de IA Pro: {e}"
 
-# --- LÓGICA DE BÚSQUEDA Y RESULTADOS ---
+# --- EJECUCIÓN DE BÚSQUEDA Y RESULTADOS ---
 consulta_efectiva = query or st.session_state["query_activa"]
 
 if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todos":
     if not base_datos:
-        st.error("La base de datos de cartas no está cargada.")
+        st.error("La base de datos de cartas no está disponible.")
     else:
         es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_efectiva)) if consulta_efectiva else False
         terminos = [consulta_efectiva.lower()] if es_hebreo else obtener_conceptos_hebreo(consulta_efectiva)
         
         if consulta_efectiva:
-            st.write(f"🎯 **Términos de búsqueda aplicados:** `{', '.join(terminos)}`")
+            badges_html = "".join([f"<span class='badge'>{t}</span>" for t in terminos])
+            st.markdown(f"🎯 **Conceptos clave identificados:** {badges_html}", unsafe_allow_html=True)
+            st.write("")
 
         resultados = []
         for tomo, info in base_datos.items():
@@ -232,46 +297,29 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                 break
 
         if resultados:
-            st.success(f"Se encontraron {len(resultados)} carta(s) coincidente(s).")
+            st.success(f"Se encontraron **{len(resultados)}** cartas coincidentes.")
             
             for idx, res in enumerate(resultados, 1):
-                with st.expander(f"📜 Carta {idx}: ID {res['id_carta']} | {res['tomo']}", expanded=True):
+                with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
                     if not generar_traduccion:
                         st.subheader("Texto Original (Hebreo / Iídish)")
                         st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
                     else:
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.subheader("Texto Original (Hebreo / Iídish)")
-                            st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                            st.subheader("Texto Original")
+                            st.text_area("Contenido en hebreo/iídish:", res['contenido'], height=380, key=f"orig_{idx}")
                         
                         with col2:
-                            st.subheader(f"Traducción Abierta ({idioma_destino})")
-                            with st.spinner("Interpretando texto..."):
-                                traduccion = traducir_carta_cached(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
+                            st.subheader(f"Análisis e Interpretación ({idioma_destino})")
+                            with st.spinner("🤖 Procesando análisis profundo con Gemini Pro..."):
+                                traduccion = traducir_carta_premium(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
-            st.warning("No se encontraron cartas que coincidan con los criterios seleccionados.")
+            st.warning("No se encontraron coincidencias para la búsqueda especificada.")
 
-# --- FOOTER / MARCA DE AGUA ---
+# --- FOOTER CON MARCA DE AGUA ---
 st.markdown("""
-    <style>
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: rgba(15, 23, 42, 0.9);
-        color: #94a3b8;
-        text-align: center;
-        padding: 8px 0px;
-        font-size: 13px;
-        font-weight: bold;
-        letter-spacing: 0.5px;
-        border-top: 1px solid #334155;
-        z-index: 999;
-    }
-    </style>
     <div class="footer">
         Hecho por: Ariel Lichinizer y Eitan Embon
     </div>
