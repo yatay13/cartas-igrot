@@ -214,7 +214,7 @@ def obtener_conceptos_hebreo(consulta):
         Responde ÚNICAMENTE las palabras en hebreo/iídish separadas por comas.
         """
         try:
-            res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
@@ -239,17 +239,23 @@ def traducir_carta_premium(contenido, idioma, tema):
 
     Instrucciones para la respuesta en {idioma}:
     1. Aclaración inicial obligatoria:
-       "⚠️ *Nota de Traducción: Interpretación asistida por IA avanzada. Los conceptos halájicos y marianos deben ser revisados con un Rabino calificado.*"
+       "⚠️ *Nota de Traducción: Interpretación asistida por IA avanzada. Los conceptos halájicos deben ser revisados con un Rabino calificado.*"
     2. **Contexto & Esencia**: Explica brevemente de qué trata la carta y cómo conecta con el tema '{tema}'.
     3. **Traducción Contextual Fluida**: Traduce el texto al {idioma} manteniendo el tono pastoral, elevado y respetuoso original (evita traducciones literales palabra por palabra que pierdan sentido).
     4. **Glosario de Términos Rabínicos**: Explica de 2 a 4 conceptos en hebreo/iídish presentes en el texto original.
     """
+    
+    # Intento 1: Modelo Flagship Pro
     try:
-        # Actualizado a gemini-3.6-pro para razonamiento profundo
-        res = client.models.generate_content(model='gemini-3.6-pro', contents=prompt)
+        res = client.models.generate_content(model='gemini-2.5-pro', contents=prompt)
         return res.text
-    except Exception as e:
-        return f"⚠️ Error en el motor de IA Pro: {e}"
+    except Exception:
+        # Intento 2 (Fallback): Si Pro no está disponible o falla, usa Flash automáticamente
+        try:
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            return res.text
+        except Exception as e:
+            return f"⚠️ Error en la respuesta de la IA: {e}"
 
 # --- EJECUCIÓN DE BÚSQUEDA Y RESULTADOS ---
 consulta_efectiva = query or st.session_state["query_activa"]
@@ -306,7 +312,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                         
                         with col2:
                             st.subheader(f"Análisis e Interpretación ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis profundo con Gemini 3.6 Pro..."):
+                            with st.spinner("🤖 Procesando análisis con Gemini IA..."):
                                 traduccion = traducir_carta_premium(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
