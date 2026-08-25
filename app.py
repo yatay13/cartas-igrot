@@ -18,12 +18,10 @@ st.set_page_config(
 # --- ESTILOS CSS PERSONALIZADOS (UI/UX PREMIUM) ---
 st.markdown("""
     <style>
-    /* Estilo general */
     .stApp {
         background-color: #0f172a;
         color: #f8fafc;
     }
-    /* Tarjetas de cartas */
     .carta-box {
         background-color: #1e293b;
         border: 1px solid #334155;
@@ -32,7 +30,6 @@ st.markdown("""
         margin-bottom: 20px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
-    /* Insignias de términos */
     .badge {
         background-color: #3b82f6;
         color: white;
@@ -43,7 +40,6 @@ st.markdown("""
         display: inline-block;
         margin-right: 5px;
     }
-    /* Footer fijo */
     .footer {
         position: fixed;
         left: 0;
@@ -67,7 +63,6 @@ st.markdown("""
 def sanitizar_texto(texto: str) -> str:
     if not texto:
         return ""
-    # Eliminar posibles inyecciones HTML/JS y caracteres de control
     clean = html.escape(texto.strip())
     clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
     return clean[:200]
@@ -213,14 +208,14 @@ def obtener_conceptos_hebreo(consulta):
     if not consulta:
         return []
     if client:
-        # Uso del modelo Pro para máxima precisión conceptual
         prompt = f"""
         Como erudito en la literatura de Chabad e Igrot Kodesh, analiza este tema: '{consulta}'.
         Proporciona entre 5 y 8 términos clave exactos en HEBREO e IÍDISH asociados comunitariamente o rabínicamente a este tema.
         Responde ÚNICAMENTE las palabras en hebreo/iídish separadas por comas.
         """
         try:
-            res = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
+            # Modelo rápido para extracción de conceptos
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
@@ -251,8 +246,8 @@ def traducir_carta_premium(contenido, idioma, tema):
     4. **Glosario de Términos Rabínicos**: Explica de 2 a 4 conceptos en hebreo/iídish presentes en el texto original.
     """
     try:
-        # Modelo Gemini 1.5 Pro para calidad máxima
-        res = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
+        # Modelo Flagship de razonamiento profundo
+        res = client.models.generate_content(model='gemini-2.5-pro', contents=prompt)
         return res.text
     except Exception as e:
         return f"⚠️ Error en el motor de IA Pro: {e}"
@@ -312,7 +307,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                         
                         with col2:
                             st.subheader(f"Análisis e Interpretación ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis profundo con Gemini Pro..."):
+                            with st.spinner("🤖 Procesando análisis profundo con Gemini 2.5 Pro..."):
                                 traduccion = traducir_carta_premium(res['contenido'], idioma_destino, consulta_efectiva or filtro_fecha or "General")
                             st.markdown(traduccion)
         else:
