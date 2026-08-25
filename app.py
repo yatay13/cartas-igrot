@@ -21,16 +21,13 @@ def cargar_datos():
     base_datos = {}
     archivo_encontrado = None
     
-    # 1. Buscar archivos .zip o .json en el directorio
     archivos = os.listdir('.')
     zips = [f for f in archivos if f.endswith('.zip')]
     jsons = [f for f in archivos if f.endswith('.json')]
     
-    # Intentar leer desde el ZIP primero
     if zips:
         try:
             with zipfile.ZipFile(zips[0], 'r') as z:
-                # Buscar cualquier JSON dentro del zip (incluso si está dentro de carpetas)
                 nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
                 if nombres_json:
                     with z.open(nombres_json[0]) as f:
@@ -39,7 +36,6 @@ def cargar_datos():
         except Exception as e:
             st.error(f"Error al abrir el archivo ZIP: {e}")
             
-    # Intentar leer JSON si no se pudo desde el ZIP
     elif jsons:
         try:
             with open(jsons[0], "r", encoding="utf-8") as f:
@@ -70,7 +66,6 @@ tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Tod
 tomo_seleccionado = st.sidebar.selectbox("Filtrar por Tomo:", tomos_disponibles)
 filtro_fecha = st.sidebar.text_input("Filtrar por rango de fechas/años (opcional):", placeholder="Ej: תש''ה o 1945")
 
-# Estado de la base de datos en la sidebar
 if base_datos:
     st.sidebar.info(f"📁 Base de datos cargada: {len(base_datos)} tomos desde `{nombre_archivo}`")
 else:
@@ -95,12 +90,11 @@ def obtener_conceptos_hebreo(consulta):
         Responde ÚNICAMENTE las palabras en hebreo separadas por comas.
         """
         try:
-            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
             return [t.strip().lower() for t in res.text.split(',') if t.strip()]
         except Exception:
             pass
 
-    # Usar diccionario de respaldo si falla la API
     consulta_clean = consulta.lower().strip()
     for clave, lista in DICCIONARIO_RESPALDO.items():
         if clave in consulta_clean:
@@ -126,7 +120,7 @@ def traducir_carta(contenido, idioma, tema):
     4. Explica 2 o 3 términos clave en hebreo/iídish presentes en el texto.
     """
     try:
-        res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+        res = client.models.generate_content(model='gemini-3.6-flash', contents=prompt)
         return res.text
     except Exception as e:
         return f"⚠️ Error de la API al traducir: {e}"
