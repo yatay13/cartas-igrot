@@ -39,9 +39,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE CACHÉ DE ETIQUETAS EN SESIÓN ---
+# --- INICIALIZACIÓN DE CACHÉ EN SESIÓN ---
 if "cache_tags" not in st.session_state:
-    st.session_state["cache_tags"] = {}  # ESTRUCTURA: { id_carta: ["salud", "bendición", ...] }
+    st.session_state["cache_tags"] = {}
 
 if "query_activa" not in st.session_state:
     st.session_state["query_activa"] = ""
@@ -66,19 +66,25 @@ def obtener_cliente_gemini(api_key):
 
 client = obtener_cliente_gemini(API_KEY)
 
-# --- DETECCIÓN DINÁMICA DE MODELOS ---
-@st.cache_resource
-def obtener_modelos_disponibles():
-    if not client: return None, None
-    try:
-        modelos = [m.name for m in client.models.list() if "generateContent" in getattr(m, "supported_actions", getattr(m, "supported_generation_methods", []))]
-        flash_model = next((m for m in modelos if "flash" in m.lower()), modelos[0] if modelos else None)
-        pro_model = next((m for m in modelos if "pro" in m.lower()), flash_model)
-        return pro_model, flash_model
-    except Exception:
-        return "models/gemini-3.6-pro", "models/gemini-3.6-flash"
-
-MODELO_PRO, MODELO_FLASH = obtener_modelos_disponibles()
+# --- DETECCIÓN DE MODELOS ACTIVO CON FALLBACK ---
+def ejecutar_gemini(prompt):
+    if not client:
+        return None, "Cliente no inicializado. Revisa la GEMINI_API_KEY."
+    
+    # Lista de nombres de modelos vigentes ordenados por prioridad
+    modelos_candidatos = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
+    
+    ultimo_error = ""
+    for m in modelos_candidatos:
+        try:
+            res = client.models.generate_content(model=m, contents=prompt)
+            if res and res.text:
+                return res.text, None
+        except Exception as e:
+            ultimo_error = str(e)
+            continue
+            
+    return None, ultimo_error
 
 # --- CARGA DE DATOS ---
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -172,12 +178,10 @@ DICCIONARIO_RESPALDO = {
 
 def obtener_conceptos_hebreo(consulta):
     if not consulta: return []
-    if client and MODELO_FLASH:
-        prompt = f"Proporciona entre 4 y 7 términos clave en HEBREO asociados a '{consulta}' en las cartas del Rebe. Responde SOLO palabras en hebreo separadas por comas."
-        try:
-            res = client.models.generate_content(model=MODELO_FLASH, contents=prompt)
-            return [t.strip().lower() for t in res.text.split(',') if t.strip()]
-        except Exception: pass
+    prompt = f"Proporciona entre 4 y 7 términos clave en HEBREO asociados a '{consulta}' en las cartas del Rebe. Responde SOLO palabras en hebreo separadas por comas."
+    res_text, _ = ejecutar_gemini(prompt)
+    if res_text:
+        return [t.strip().lower() for t in res_text.split(',') if t.strip()]
 
     consulta_clean = consulta.lower().strip()
     return DICCIONARIO_RESPALDO.get(consulta_clean, [consulta_clean])
@@ -185,9 +189,6 @@ def obtener_conceptos_hebreo(consulta):
 def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     if not contenido or not contenido.strip():
         return "⚠️ *El texto de esta carta está vacío en la base de datos JSON original.*", []
-        
-    if not client:
-        return "⚠️ *Servicio de IA no disponible.*", []
 
     prompt = f"""
     Eres un Rabino y erudito lingüista. Analiza la siguiente carta original del Rebe de Lubavitch:
@@ -197,25 +198,17 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
 
     Genera una respuesta estructurada estrictamente en {idioma}:
     1. Aclaración inicial: "⚠️ *Nota de Traducción: Interpretación asistida por IA.*"
-    2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas descriptivas de la carta (ejemplo: Salud, Parnasá, Educación, Bitajón). Escríbelas en la línea exactamanete así: ETIQUETAS: tag1, tag2, tag3
+    2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas descriptivas de la carta (ejemplo: Salud, Parnasá, Educación, Bitajón). Escríbelas en la línea exactamente así: ETIQUETAS: tag1, tag2, tag3
     3. **Contexto & Esencia**: Breve síntesis.
     4. **Traducción Contextual Fluida**: Traduce respetando el tono pastoral.
     5. **Glosario**: Explica 2-3 términos rabínicos clave.
     """
     
-    modelos = [m for m in [MODELO_PRO, MODELO_FLASH] if m]
-    res_text = ""
-    for m in modelos:
-        try:
-            res = client.models.generate_content(model=m, contents=prompt)
-            res_text = res.text
-            break
-        except Exception: continue
+    res_text, err = ejecutar_gemini(prompt)
         
     if not res_text:
-        return "⚠️ *Error al procesar la carta con el motor de IA.*", []
+        return f"⚠️ *Error al procesar la carta con el motor de IA: {err}*", []
 
-    # Extraer y guardar etiquetas en st.session_state
     tags_extraidos = []
     match = re.search(r'ETIQUETAS:\s*(.*)', res_text, re.IGNORECASE)
     if match:
@@ -247,7 +240,6 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
             for carta in info.get("cartas", []):
                 texto = carta.get("contenido", "")
                 
-                # FILTRO CLAVE: Descartar cartas completamente vacías
                 if not texto or not texto.strip():
                     continue
                     
@@ -255,7 +247,6 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                 id_carta = str(carta.get("id_carta", "")).lower()
                 cached_tags = st.session_state["cache_tags"].get(id_carta, [])
                 
-                # Búsqueda coincidente en Texto, ID o TAGS ya guardados en caché
                 coincide_termino = (
                     any(t in texto_lower or t == id_carta for t in terminos) or
                     any(c_tag in consulta_efectiva.lower() for c_tag in cached_tags)
