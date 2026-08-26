@@ -66,16 +66,40 @@ def obtener_cliente_gemini(api_key):
 
 client = obtener_cliente_gemini(API_KEY)
 
-# --- DETECCIÓN DE MODELOS ACTIVO CON FALLBACK ---
+# --- OBTENER LISTA DE MODELOS VÁLIDOS DE LA API ---
+@st.cache_resource
+def obtener_modelos_dinamicos():
+    if not client:
+        return []
+    try:
+        modelos_disponibles = []
+        for m in client.models.list():
+            # Extraer solo el identificador limpio del modelo
+            nombre = m.name.split("/")[-1] if "/" in m.name else m.name
+            modelos_disponibles.append(nombre)
+        return modelos_disponibles
+    except Exception:
+        return []
+
+# --- EJECUTOR DE GEMINI CON RESPALDO AUTOMÁTICO DINÁMICO ---
 def ejecutar_gemini(prompt):
     if not client:
-        return None, "Cliente no inicializado. Revisa la GEMINI_API_KEY."
+        return None, "Cliente no inicializado. Revisa la GEMINI_API_KEY en Secrets."
     
-    # Lista de nombres de modelos vigentes ordenados por prioridad
-    modelos_candidatos = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # 1. Obtener modelos reales permitidos por la API del usuario
+    modelos_api = obtener_modelos_dinamicos()
+    
+    # 2. Lista prioritaria de respaldos si no se puede listar
+    candidatos_por_defecto = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
+    
+    # Combinar modelos detectados prioritariamente
+    modelos_a_probar = [m for m in modelos_api if "flash" in m or "pro" in m] + candidatos_por_defecto
+    
+    # Eliminar duplicados manteniendo orden
+    modelos_unicos = list(dict.fromkeys(modelos_a_probar))
     
     ultimo_error = ""
-    for m in modelos_candidatos:
+    for m in modelos_unicos:
         try:
             res = client.models.generate_content(model=m, contents=prompt)
             if res and res.text:
