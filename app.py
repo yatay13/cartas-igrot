@@ -16,23 +16,27 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- CODIFICACIÓN BASE64 DE LA FOTO PARA GARANTIZAR QUE SE VEA COMO FONDO ---
+# --- CODIFICACIÓN BASE64 SEGURA PARA EL FONDO (PREVIENE BUG DE RUTAS) ---
+@st.cache_data(show_spinner=False)
 def obtener_imagen_base64():
-    for nombre in ["rebe.jpg", "rebe.jpeg", "rebe.png"]:
-        if os.path.exists(nombre):
-            ext = nombre.split(".")[-1]
-            with open(nombre, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode()
-            return f"data:image/{ext};base64,{encoded_string}"
-    # Imagen de respaldo online por si no encuentra el archivo local
+    try:
+        for nombre in ["rebe.jpg", "rebe.jpeg", "rebe.png"]:
+            if os.path.exists(nombre):
+                ext = nombre.split(".")[-1]
+                with open(nombre, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode()
+                return f"data:image/{ext};base64,{encoded_string}"
+    except Exception as e:
+        st.warning(f"No se pudo cargar la imagen local del Rebe: {e}")
+    
+    # Imagen de respaldo alta calidad en web si la local no existe
     return "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
 
 bg_image_data = obtener_imagen_base64()
 
-# --- ESTILOS CSS CON FONDO INYECTADO Y MEJORAS DE VISIBILIDAD ---
+# --- ESTILOS CSS CON FONDO DE LA FOTO DEL REBE Y CONTRASTE ---
 st.markdown(f"""
     <style>
-    /* Aplicar la foto del Rebe como fondo general */
     .stApp {{
         background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), 
                     url("{bg_image_data}");
@@ -70,7 +74,7 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE CACHÉ EN SESIÓN ---
+# --- INICIALIZACIÓN DE ESTADOS ---
 if "cache_tags" not in st.session_state:
     st.session_state["cache_tags"] = {}
 
@@ -80,24 +84,29 @@ if "query_activa" not in st.session_state:
 # --- SANITIZACIÓN ---
 def sanitizar_texto(texto: str) -> str:
     if not texto: return ""
-    clean = html.escape(texto.strip())
-    clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
-    return clean[:200]
+    try:
+        clean = html.escape(str(texto).strip())
+        clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
+        return clean[:200]
+    except Exception:
+        return ""
 
-# --- OBTENCIÓN DE API KEY Y CLIENTE GEMINI ---
+# --- CLIENTE Y MODELOS DE GEMINI CON MANEJO DE ERRORES ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
 @st.cache_resource
 def obtener_cliente_gemini(api_key):
     if api_key:
-        try: return genai.Client(api_key=api_key.strip())
-        except Exception: return None
+        try:
+            return genai.Client(api_key=api_key.strip())
+        except Exception as e:
+            st.error(f"Error al inicializar GenAI Client: {e}")
+            return None
     return None
 
 client = obtener_cliente_gemini(API_KEY)
 
-# --- OBTENER MODELOS VÁLIDOS DE LA API ---
 @st.cache_resource
 def obtener_modelos_dinamicos():
     if not client: return []
@@ -110,18 +119,16 @@ def obtener_modelos_dinamicos():
     except Exception:
         return []
 
-# --- EJECUTOR GEMINI CON RESPALDO ---
 def ejecutar_gemini(prompt):
     if not client:
-        return None, "Cliente no inicializado. Revisa la GEMINI_API_KEY en Secrets."
+        return None, "Cliente IA no inicializado. Verifique la API Key."
     
     modelos_api = obtener_modelos_dinamicos()
-    candidatos_por_defecto = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
-    modelos_a_probar = [m for m in modelos_api if "flash" in m or "pro" in m] + candidatos_por_defecto
-    modelos_unicos = list(dict.fromkeys(modelos_a_probar))
+    candidatos = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
+    modelos_a_probar = list(dict.fromkeys([m for m in modelos_api if "flash" in m or "pro" in m] + candidatos))
     
-    ultimo_error = ""
-    for m in modelos_unicos:
+    ultimo_error = "Ningún modelo respondió."
+    for m in modelos_a_probar:
         try:
             res = client.models.generate_content(model=m, contents=prompt)
             if res and res.text:
@@ -132,69 +139,80 @@ def ejecutar_gemini(prompt):
             
     return None, ultimo_error
 
-# --- CARGA DE DATOS ---
+# --- CARGA DE BASE DE DATOS RESISTENTE A FALLOS ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_datos_drive(file_id):
     archivo_local = "base_datos_descargada"
     if not os.path.exists(archivo_local):
         url_drive = f"https://drive.google.com/uc?id={file_id}"
         try:
-            with st.spinner("📦 Cargando base de datos por primera vez..."):
+            with st.spinner("📦 Descargando base de datos por única vez..."):
                 gdown.download(url_drive, archivo_local, quiet=False)
         except Exception as e:
-            return {}, f"Error al descargar desde Drive: {e}"
+            return {}, f"Error descargando datos: {e}"
+
+    if not os.path.exists(archivo_local):
+        return {}, "El archivo descargado no existe."
 
     try:
         with open(archivo_local, "r", encoding="utf-8") as f:
-            return json.load(f), "Google Drive (JSON)"
-    except Exception: pass
+            return json.load(f), "JSON Directo"
+    except Exception:
+        pass
 
     try:
         with zipfile.ZipFile(archivo_local, 'r') as z:
             nombres_json = [f for f in z.namelist() if f.endswith('.json') and not f.startswith('__MACOSX')]
             if nombres_json:
                 with z.open(nombres_json[0]) as f:
-                    return json.load(f), "Google Drive (ZIP)"
+                    return json.load(f), "ZIP Extraído"
     except Exception as e:
-        return {}, f"Error: {e}"
+        return {}, f"Error leyendo ZIP/JSON: {e}"
 
-    return {}, "Formato no compatible"
+    return {}, "Formato de base de datos no reconocido."
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
 # --- CABECERA ---
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Fondo Personalizado y Playlist Directa.</p>", unsafe_allow_html=True)
 
-# --- REPRODUCTOR DE AUDIOS / PLAYLIST DE NIGUNIM CHASSIDICOS ---
+# --- PLAYLIST EXTENSA DE NIGUNIM DE JABAD (AUDIOS VALIDADOS EN INTERNET ARCHIVE) ---
 PLAYLIST_NIGUNIM = {
-    "Tzama Lecha Nafshi (Nichoach Vol. 1)": "https://www.chabad.org/media/audio/140/Tzama%20Lecha%20Nafshi.mp3",
-    "Nigun D'veikus del Alter Rebe": "https://www.chabad.org/media/audio/140/Nigun%20Dveikus.mp3",
-    "Rostover Nigun": "https://www.chabad.org/media/audio/140/Rostover%20Nigun.mp3",
-    "Nigun Rebbe Maharash": "https://www.chabad.org/media/audio/140/Nigun%20Rebbe%20Maharash.mp3",
-    "Kehot / Nigun Simcha": "https://www.chabad.org/media/audio/140/Nigun%20Simcha.mp3",
-    "Nyet Nyet Nikavo": "https://www.chabad.org/media/audio/140/Nyet%20Nyet%20Nikavo.mp3",
-    "Ki Anu Amecha": "https://www.chabad.org/media/audio/140/Ki%20Anu%20Amecha.mp3"
+    "Tzama Lecha Nafshi (Alter Rebe)": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_07.mp3",
+    "Ach Leilokim Domi Nafshi": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_12.mp3",
+    "Rostover Nigun": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_05.mp3",
+    "Nigun D'veikus": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_04.mp3",
+    "Nigun Rebbe Maharash": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_02.mp3",
+    "Nigun Simcha": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_06.mp3",
+    "Kol Dodi": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_07.mp3",
+    "Podo V'sholom": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_08.mp3",
+    "Napoleon's March": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_13.mp3",
+    "Nigun M'sorosi": "https://ia800203.us.archive.org/16/items/lp_chabad-nigunim-volume-3_lubavitcher-chassidim/track_13.mp3"
 }
 
 st.markdown('<div class="audio-card">', unsafe_allow_html=True)
 col_aud1, col_aud2 = st.columns([1.5, 2.5])
 
 with col_aud1:
-    nigun_sel = st.selectbox("🎵 Seleccionar Nigun de Jabad:", list(PLAYLIST_NIGUNIM.keys()))
+    nigun_sel = st.selectbox("🎵 Playlist de Nigunim Tradicionales:", list(PLAYLIST_NIGUNIM.keys()))
 
 with col_aud2:
-    url_pista = PLAYLIST_NIGUNIM[nigun_sel]
-    st.audio(url_pista, format="audio/mp3", autoplay=True)
+    url_pista = PLAYLIST_NIGUNIM.get(nigun_sel, "")
+    if url_pista:
+        try:
+            st.audio(url_pista, format="audio/mp3", autoplay=True)
+        except Exception as err_aud:
+            st.error(f"Error reproduciendo audio: {err_aud}")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- CONTROLES DE BÚSQUEDA ---
+# --- CONTROLES DE BÚSQUEDA Y FILTROS ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
-tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Todos"]
+tomos_disponibles = ["Todos"] + list(base_datos.keys()) if isinstance(base_datos, dict) and base_datos else ["Todos"]
 
 with col_f1:
-    raw_query = st.text_input("Ingrese tema, concepto o ID:", value=st.session_state["query_activa"], placeholder="Ej: Educación, Salud, Bendición...", key="input_query")
+    raw_query = st.text_input("Ingrese tema, concepto o ID:", value=st.session_state.get("query_activa", ""), placeholder="Ej: Educación, Salud, Bendición...", key="input_query")
     query = sanitizar_texto(raw_query)
 
 with col_f2:
@@ -209,12 +227,12 @@ with col_f4:
 
 col_opt1, col_opt2 = st.columns([2, 2])
 with col_opt1:
-    generar_traduccion = st.checkbox("Interpretación Erudita con IA (Modelo Pro)", value=True)
+    generar_traduccion = st.checkbox("Interpretación Erudita con IA", value=True)
 with col_opt2:
     idioma_destino = st.selectbox("Idioma de traducción:", ["Español", "Hebreo Moderno", "English", "Français", "Português", "Ruso"], disabled=not generar_traduccion)
 
-# --- BOTONES DE ACCESO RÁPIDO ---
-st.write("📌 **Categorías Principales:**")
+# --- BOTONES DE CATEGORÍAS ---
+st.write("📌 **Categorías Rápidas:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
 if col_b1.button("🩺 Salud", use_container_width=True): st.session_state["query_activa"] = "Salud"
 if col_b2.button("🎓 Educación", use_container_width=True): st.session_state["query_activa"] = "Educación"
@@ -225,14 +243,13 @@ if col_b6.button("🧹 Limpiar", use_container_width=True): st.session_state["qu
 
 st.markdown("---")
 
-# BOTÓN ÚNICO DE ACTIVACIÓN DE BÚSQUEDA
 btn_buscar = st.button("🔍 Realizar Búsqueda Avanzada", type="primary", use_container_width=True)
 
-# --- DICCIONARIO BASE ENRIQUECIDO ---
+# --- MAPEO DE RESPALDO EN HEBREO ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא", "חולה"],
-    "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד", "בית ספר"],
-    "educación": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד", "בית ספר"],
+    "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד"],
+    "educación": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד"],
     "bendicion": ["ברכה", "ברכה והצלחה", "אגרת", "בברכה"],
     "bendición": ["ברכה", "ברכה והצלחה", "אגרת", "בברכה"],
     "trabajo": ["פרנסה", "עבודה", "מסחר", "עסק"],
@@ -254,18 +271,18 @@ def obtener_conceptos_hebreo(consulta):
     return [consulta_clean]
 
 def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
-    if not contenido or not contenido.strip():
-        return "⚠️ *El texto de esta carta está vacío en la base de datos JSON original.*", []
+    if not contenido or not str(contenido).strip():
+        return "⚠️ *El texto de esta carta está vacío.*", []
 
     prompt = f"""
     Eres un Rabino y erudito lingüista. Analiza la siguiente carta original del Rebe de Lubavitch:
     
     TEXTO ORIGINAL:
-    {contenido[:4000]}
+    {str(contenido)[:4000]}
 
     Genera una respuesta estructurada estrictamente en {idioma}:
     1. Aclaración inicial: "⚠️ *Nota de Traducción: Interpretación asistida por IA.*"
-    2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas descriptivas de la carta (ejemplo: Salud, Parnasá, Educación, Bitajón). Escríbelas en la línea exactamente así: ETIQUETAS: tag1, tag2, tag3
+    2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas. Escríbelas así: ETIQUETAS: tag1, tag2, tag3
     3. **Contexto & Esencia**: Breve síntesis.
     4. **Traducción Contextual Fluida**: Traduce respetando el tono pastoral.
     5. **Glosario**: Explica 2-3 términos rabínicos clave.
@@ -274,98 +291,105 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     res_text, err = ejecutar_gemini(prompt)
         
     if not res_text:
-        return f"⚠️ *Error al procesar la carta con el motor de IA: {err}*", []
+        return f"⚠️ *Error al procesar con IA: {err}*", []
 
     tags_extraidos = []
-    match = re.search(r'ETIQUETAS:\s*(.*)', res_text, re.IGNORECASE)
-    if match:
-        tags_raw = match.group(1).split(',')
-        tags_extraidos = [t.strip().lower() for t in tags_raw if t.strip()]
-        st.session_state["cache_tags"][id_carta] = tags_extraidos
+    try:
+        match = re.search(r'ETIQUETAS:\s*(.*)', res_text, re.IGNORECASE)
+        if match:
+            tags_raw = match.group(1).split(',')
+            tags_extraidos = [t.strip().lower() for t in tags_raw if t.strip()]
+            st.session_state["cache_tags"][id_carta] = tags_extraidos
+    except Exception:
+        pass
 
     return res_text, tags_extraidos
 
-# --- MOTOR DE BÚSQUEDA EXCLUSIVO POR BOTÓN ---
+# --- PROCESAMIENTO DE BÚSQUEDA DEFENSIVO ---
 if btn_buscar:
-    consulta_efectiva = query or st.session_state["query_activa"]
+    consulta_efectiva = query or st.session_state.get("query_activa", "")
     
-    if not base_datos:
-        st.error("Base de datos no disponible.")
+    if not isinstance(base_datos, dict) or not base_datos:
+        st.error(f"Base de datos no disponible o inválida. {origen_datos}")
     else:
-        es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_efectiva)) if consulta_efectiva else False
-        terminos = [consulta_efectiva.lower()] if es_hebreo else obtener_conceptos_hebreo(consulta_efectiva)
-        
-        if consulta_efectiva:
-            badges_html = "".join([f"<span class='badge'>{t}</span>" for t in terminos])
-            st.markdown(f"🎯 **Términos de Búsqueda Aplicados:** {badges_html}", unsafe_allow_html=True)
-
-        resultados = []
-        for tomo, info in base_datos.items():
-            if tomo_seleccionado != "Todos" and tomo != tomo_seleccionado:
-                continue
+        try:
+            es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_efectiva)) if consulta_efectiva else False
+            terminos = [consulta_efectiva.lower()] if es_hebreo else obtener_conceptos_hebreo(consulta_efectiva)
             
-            for carta in info.get("cartas", []):
-                texto = carta.get("contenido", "")
-                
-                if not texto or not texto.strip():
+            if consulta_efectiva:
+                badges_html = "".join([f"<span class='badge'>{t}</span>" for t in terminos])
+                st.markdown(f"🎯 **Términos Aplicados:** {badges_html}", unsafe_allow_html=True)
+
+            resultados = []
+            for tomo, info in base_datos.items():
+                if tomo_seleccionado != "Todos" and tomo != tomo_seleccionado:
                     continue
+                
+                cartas_lista = info.get("cartas", []) if isinstance(info, dict) else []
+                for carta in cartas_lista:
+                    if not isinstance(carta, dict): continue
                     
-                texto_lower = texto.lower()
-                id_carta = str(carta.get("id_carta", "")).lower()
-                cached_tags = st.session_state["cache_tags"].get(id_carta, [])
-                
-                coincide_termino = False
-                if terminos:
-                    coincide_termino = (
-                        any(t in texto_lower or t in id_carta for t in terminos) or
-                        any(c_tag in consulta_efectiva.lower() for c_tag in cached_tags)
-                    )
-                else:
-                    coincide_termino = True
-                
-                coincide_fecha = (filtro_fecha.lower() in texto_lower or filtro_fecha.lower() in tomo.lower()) if filtro_fecha else True
-                
-                if coincide_termino and coincide_fecha:
-                    resultados.append({
-                        "tomo": os.path.basename(tomo),
-                        "id_carta": id_carta,
-                        "contenido": texto,
-                        "tags": cached_tags
-                    })
-                    if len(resultados) >= cant_cartas: break
-            if len(resultados) >= cant_cartas: break
-
-        if resultados:
-            st.success(f"Se encontraron **{len(resultados)}** cartas relevantes con contenido real.")
-            
-            for idx, res in enumerate(resultados, 1):
-                with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
-                    if res["tags"]:
-                        tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
-                        st.markdown(f"**Etiquetas en Caché:** {tags_html}", unsafe_allow_html=True)
-                        st.write("")
-
-                    if not generar_traduccion:
-                        st.subheader("Texto Original (Hebreo / Iídish)")
-                        st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
-                    else:
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.subheader("Texto Original")
-                            st.text_area("Contenido en hebreo/iídish:", res['contenido'], height=380, key=f"orig_{idx}")
+                    texto = carta.get("contenido", "")
+                    if not texto or not str(texto).strip(): continue
                         
-                        with col2:
-                            st.subheader(f"Análisis e Interpretación ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis y generando etiquetas..."):
-                                traduccion, nuevos_tags = traducir_y_etiquetar(
-                                    res['contenido'], 
-                                    idioma_destino, 
-                                    consulta_efectiva or filtro_fecha or "General",
-                                    res['id_carta']
-                                )
-                            st.markdown(traduccion)
-        else:
-            st.warning("No se encontraron cartas que contengan los términos o temas especificados.")
+                    texto_lower = str(texto).lower()
+                    id_carta = str(carta.get("id_carta", "")).lower()
+                    cached_tags = st.session_state["cache_tags"].get(id_carta, [])
+                    
+                    coincide_termino = False
+                    if terminos:
+                        coincide_termino = (
+                            any(t in texto_lower or t in id_carta for t in terminos) or
+                            any(c_tag in consulta_efectiva.lower() for c_tag in cached_tags)
+                        )
+                    else:
+                        coincide_termino = True
+                    
+                    coincide_fecha = (filtro_fecha.lower() in texto_lower or filtro_fecha.lower() in str(tomo).lower()) if filtro_fecha else True
+                    
+                    if coincide_termino and coincide_fecha:
+                        resultados.append({
+                            "tomo": os.path.basename(str(tomo)),
+                            "id_carta": id_carta,
+                            "contenido": texto,
+                            "tags": cached_tags
+                        })
+                        if len(resultados) >= cant_cartas: break
+                if len(resultados) >= cant_cartas: break
+
+            if resultados:
+                st.success(f"Se encontraron **{len(resultados)}** cartas.")
+                
+                for idx, res in enumerate(resultados, 1):
+                    with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
+                        if res["tags"]:
+                            tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
+                            st.markdown(f"**Etiquetas:** {tags_html}", unsafe_allow_html=True)
+                            st.write("")
+
+                        if not generar_traduccion:
+                            st.subheader("Texto Original")
+                            st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                        else:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.subheader("Texto Original")
+                                st.text_area("Contenido:", res['contenido'], height=380, key=f"orig_{idx}")
+                            
+                            with col2:
+                                st.subheader(f"Análisis ({idioma_destino})")
+                                with st.spinner("🤖 Procesando carta..."):
+                                    traduccion, _ = traducir_y_etiquetar(
+                                        res['contenido'], 
+                                        idioma_destino, 
+                                        consulta_efectiva or filtro_fecha or "General",
+                                        res['id_carta']
+                                    )
+                                st.markdown(traduccion)
+            else:
+                st.warning("No se encontraron cartas con esos términos de búsqueda.")
+        except Exception as err_proc:
+            st.error(f"Error inesperado durante la búsqueda: {err_proc}")
 
 # --- FOOTER ---
 st.markdown("""
