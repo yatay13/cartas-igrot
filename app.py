@@ -3,6 +3,7 @@ import os
 import re
 import html
 import zipfile
+import base64
 import gdown
 import streamlit as st
 from google import genai
@@ -15,25 +16,30 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- DETECCION DE RUTA DE IMAGEN DEL REBE PARA EL FONDO ---
-imagen_fondo = ""
-if os.path.exists("rebe.jpg"):
-    imagen_fondo = "rebe.jpg"
-elif os.path.exists("rebe.png"):
-    imagen_fondo = "rebe.png"
-else:
-    imagen_fondo = "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
+# --- CODIFICACIÓN BASE64 DE LA FOTO PARA GARANTIZAR QUE SE VEA COMO FONDO ---
+def obtener_imagen_base64():
+    for nombre in ["rebe.jpg", "rebe.jpeg", "rebe.png"]:
+        if os.path.exists(nombre):
+            ext = nombre.split(".")[-1]
+            with open(nombre, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+            return f"data:image/{ext};base64,{encoded_string}"
+    # Imagen de respaldo online por si no encuentra el archivo local
+    return "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
 
-# --- ESTILOS CSS CON FONDO DE LA FOTO DEL REBE ---
+bg_image_data = obtener_imagen_base64()
+
+# --- ESTILOS CSS CON FONDO INYECTADO Y MEJORAS DE VISIBILIDAD ---
 st.markdown(f"""
     <style>
-    /* Fondo principal usando la imagen del Rebe con superposición oscura */
+    /* Aplicar la foto del Rebe como fondo general */
     .stApp {{
-        background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.94)), 
-                    url("{imagen_fondo}");
-        background-size: cover;
-        background-position: center top;
-        background-attachment: fixed;
+        background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), 
+                    url("{bg_image_data}");
+        background-size: cover !important;
+        background-position: center top !important;
+        background-repeat: no-repeat !important;
+        background-attachment: fixed !important;
         color: #f8fafc;
     }}
     
@@ -54,12 +60,12 @@ st.markdown(f"""
         font-weight: 600; border-top: 1px solid #334155;
         backdrop-filter: blur(8px); z-index: 999;
     }}
-    .audio-container {{
-        background: rgba(30, 41, 59, 0.7);
-        padding: 12px 20px;
-        border-radius: 10px;
+    .audio-card {{
+        background: rgba(30, 41, 59, 0.85);
+        padding: 15px 20px;
+        border-radius: 12px;
         border: 1px solid #334155;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -78,7 +84,7 @@ def sanitizar_texto(texto: str) -> str:
     clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
     return clean[:200]
 
-# --- OBTENCIÓN DE API KEY Y CLIENTE ---
+# --- OBTENCIÓN DE API KEY Y CLIENTE GEMINI ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
@@ -158,33 +164,30 @@ base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
 # --- CABECERA ---
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Selección Precisa de Cartas.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción.</p>", unsafe_allow_html=True)
 
-# --- PLAYLIST DE NIGUNIM TRANQUILOS (ACTIVADA POR DEFECTO) ---
+# --- REPRODUCTOR DE AUDIOS / PLAYLIST DE NIGUNIM CHASSIDICOS ---
 PLAYLIST_NIGUNIM = {
-    "Tzama Lecha Nafshi (Meditación Chassidica)": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_07.mp3",
-    "Nigun D'veikus (Conexión Profunda)": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_04.mp3",
-    "Rostover Nigun (Melodía de Rostov)": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_05.mp3",
-    "Ach Leilokim Domi Nafshi": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_12.mp3"
+    "Tzama Lecha Nafshi (Nichoach Vol. 1)": "https://www.chabad.org/media/audio/140/Tzama%20Lecha%20Nafshi.mp3",
+    "Nigun D'veikus del Alter Rebe": "https://www.chabad.org/media/audio/140/Nigun%20Dveikus.mp3",
+    "Rostover Nigun": "https://www.chabad.org/media/audio/140/Rostover%20Nigun.mp3",
+    "Nigun Rebbe Maharash": "https://www.chabad.org/media/audio/140/Nigun%20Rebbe%20Maharash.mp3",
+    "Kehot / Nigun Simcha": "https://www.chabad.org/media/audio/140/Nigun%20Simcha.mp3",
+    "Nyet Nyet Nikavo": "https://www.chabad.org/media/audio/140/Nyet%20Nyet%20Nikavo.mp3",
+    "Ki Anu Amecha": "https://www.chabad.org/media/audio/140/Ki%20Anu%20Amecha.mp3"
 }
 
-col_audio1, col_audio2 = st.columns([1, 2])
-with col_audio1:
-    nigun_seleccionado = st.selectbox("🎵 Playlist Nigunim de Jabad:", list(PLAYLIST_NIGUNIM.keys()))
+st.markdown('<div class="audio-card">', unsafe_allow_html=True)
+col_aud1, col_aud2 = st.columns([1.5, 2.5])
 
-with col_audio2:
-    url_pista = PLAYLIST_NIGUNIM[nigun_seleccionado]
-    # Embebido con autoplay directo en la interfaz principal
-    st.markdown(f"""
-        <div class="audio-container">
-            <audio controls autoplay style="width: 100%;">
-                <source src="{url_pista}" type="audio/mp3">
-                Tu navegador no soporta el elemento de audio.
-            </audio>
-        </div>
-    """, unsafe_allow_html=True)
+with col_aud1:
+    nigun_sel = st.selectbox("🎵 Seleccionar Nigun de Jabad:", list(PLAYLIST_NIGUNIM.keys()))
 
-st.divider()
+with col_aud2:
+    url_pista = PLAYLIST_NIGUNIM[nigun_sel]
+    st.audio(url_pista, format="audio/mp3", autoplay=True)
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # --- CONTROLES DE BÚSQUEDA ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
@@ -260,7 +263,7 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     TEXTO ORIGINAL:
     {contenido[:4000]}
 
-    Genera una respuesta estructurada strictly en {idioma}:
+    Genera una respuesta estructurada estrictamente en {idioma}:
     1. Aclaración inicial: "⚠️ *Nota de Traducción: Interpretación asistida por IA.*"
     2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas descriptivas de la carta (ejemplo: Salud, Parnasá, Educación, Bitajón). Escríbelas en la línea exactamente así: ETIQUETAS: tag1, tag2, tag3
     3. **Contexto & Esencia**: Breve síntesis.
