@@ -89,7 +89,8 @@ def sanitizar_texto(texto: str) -> str:
         clean = html.escape(str(texto).strip())
         clean = re.sub(r'[^\w\s\u0590-\u05FF\'"\-\.\,]', '', clean)
         return clean[:200]
-    except Exception:
+    except Exception as e:
+        st.error(f"Error sanitizando entrada: {e}")
         return ""
 
 # --- CONFIGURACIÓN Y CLIENTE GEMINI CON CONTROL DE ERRORES ---
@@ -117,7 +118,7 @@ def obtener_modelos_dinamicos():
             nombre = m.name.split("/")[-1] if "/" in m.name else m.name
             modelos_disponibles.append(nombre)
         return modelos_disponibles
-    except Exception:
+    except Exception as e:
         return []
 
 def ejecutar_gemini(prompt):
@@ -178,7 +179,7 @@ base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción Erudita.</p>", unsafe_allow_html=True)
 
-# --- REPRODUCTOR DE MÚSICA CONTINUA (SOLO AUDIO CON CONTROL DIRECTO DE 1 CLIC) ---
+# --- REPRODUCTOR DE MÚSICA DE FONDO (ACTIVADA POR DEFECTO + IRAME CON MANEJO DE ERRORES) ---
 YOUTUBE_ID = "aL-L6hQAXcY"
 
 components.html(
@@ -187,36 +188,70 @@ components.html(
         <span style="color: #cbd5e1; font-family: system-ui, sans-serif; font-size: 14px; display: block; margin-bottom: 8px;">
             🎼 <b>Música Chassídica Instrumental de Fondo</b>
         </span>
-        <button id="toggleBtn" onclick="toggleAudio()" style="background-color: #3b82f6; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
-            ▶️ Iniciar / Pausar Música
+        <button id="toggleBtn" onclick="toggleAudio()" style="background-color: #ef4444; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
+            ⏸️ Pausar Música
         </button>
-        <iframe 
-            id="yt-player"
-            width="0" 
-            height="0" 
-            src="https://www.youtube.com/embed/{YOUTUBE_ID}?enablejsapi=1&autoplay=1&loop=1&playlist={YOUTUBE_ID}" 
-            frameborder="0" 
-            allow="autoplay">
-        </iframe>
+        <div id="player-container"></div>
     </div>
 
     <script>
-      var isPlaying = false;
+      var player;
+      var isPlaying = true;
+
+      // Cargar API IFrame de YouTube de forma asíncrona
+      var tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      var firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+      function onYouTubeIframeAPIReady() {{
+        player = new YT.Player('player-container', {{
+          height: '0',
+          width: '0',
+          videoId: '{YOUTUBE_ID}',
+          playerVars: {{
+            'autoplay': 1,
+            'controls': 0,
+            'loop': 1,
+            'playlist': '{YOUTUBE_ID}',
+            'playsinline': 1
+          }},
+          events: {{
+            'onReady': onPlayerReady,
+            'onError': onPlayerError
+          }}
+        }});
+      }}
+
+      function onPlayerReady(event) {{
+        event.target.playVideo();
+        // Si el navegador bloquea el audio sin interacción previa, intentamos reproducir silenciosamente o al primer clic global
+        document.addEventListener('click', function unlockAudio() {{
+          if (player && typeof player.playVideo === 'function' && isPlaying) {{
+            player.playVideo();
+          }}
+          document.removeEventListener('click', unlockAudio);
+        }}, {{ once: true }});
+      }}
+
+      function onPlayerError(event) {{
+        console.warn("Error cargando el reproductor de audio YouTube:", event.data);
+      }}
 
       function toggleAudio() {{
-        var iframe = document.getElementById('yt-player');
         var btn = document.getElementById('toggleBtn');
-        
-        if (!isPlaying) {{
-          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}}', '*');
-          btn.innerText = "⏸️ Pausar Música";
-          btn.style.backgroundColor = "#ef4444";
-          isPlaying = true;
-        }} else {{
-          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}}', '*');
+        if (!player || typeof player.pauseVideo !== 'function') return;
+
+        if (isPlaying) {{
+          player.pauseVideo();
           btn.innerText = "▶️ Reanudar Música";
           btn.style.backgroundColor = "#10b981";
           isPlaying = false;
+        }} else {{
+          player.playVideo();
+          btn.innerText = "⏸️ Pausar Música";
+          btn.style.backgroundColor = "#ef4444";
+          isPlaying = true;
         }}
       }}
     </script>
@@ -269,7 +304,7 @@ st.markdown("---")
 
 btn_buscar = st.button("🔍 Realizar Búsqueda Avanzada", type="primary", use_container_width=True)
 
-# --- DICCIONARIO BASE EN HEBREO ---
+# --- DICCIONARIO BASE EN HEBREO CON MANEJO DE CONSULTAS COMPLETAS ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא", "חולה"],
     "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד"],
@@ -288,7 +323,7 @@ def obtener_conceptos_hebreo(consulta):
         return DICCIONARIO_RESPALDO[consulta_clean]
 
     prompt = f"Proporciona entre 4 y 7 términos clave en HEBREO asociados a '{consulta}' en las cartas del Rebe de Lubavitch. Responde SOLO palabras en hebreo separadas por comas."
-    res_text, _ = ejecutar_gemini(prompt)
+    res_text, err = ejecutar_gemini(prompt)
     if res_text:
         return [t.strip().lower() for t in res_text.split(',') if t.strip()]
 
@@ -324,8 +359,8 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
             tags_raw = match.group(1).split(',')
             tags_extraidos = [t.strip().lower() for t in tags_raw if t.strip()]
             st.session_state["cache_tags"][id_carta] = tags_extraidos
-    except Exception:
-        pass
+    except Exception as e:
+        st.write(f"⚠️ *Nota en procesamiento de tags:* {e}")
 
     return res_text, tags_extraidos
 
