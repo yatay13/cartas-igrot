@@ -171,7 +171,7 @@ base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción Erudita.</p>", unsafe_allow_html=True)
 
-# --- REPRODUCTOR DE MÚSICA CONTINUA (SOLO AUDIO / SIN VIDEO) ---
+# --- REPRODUCTOR DE MÚSICA DE FONDO (REPRODUCCIÓN AUTOMÁTICA + BOTÓN PAUSAR/REPRODUCIR) ---
 YOUTUBE_ID = "aL-L6hQAXcY"
 
 components.html(
@@ -180,27 +180,38 @@ components.html(
         <span style="color: #cbd5e1; font-family: system-ui, sans-serif; font-size: 14px; display: block; margin-bottom: 8px;">
             🎼 <b>Música Chassídica Instrumental de Fondo</b>
         </span>
-        <button id="playBtn" onclick="playAudio()" style="background-color: #3b82f6; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
-            ▶️ Activar / Reproducir Música
+        <button id="toggleBtn" onclick="toggleAudio()" style="background-color: #ef4444; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
+            ⏸️ Detener / Pausar Música
         </button>
-        <!-- Reproductor oculto a 0px de ancho y alto -->
+        <!-- Reproductor oculto en Autoplay por defecto -->
         <iframe 
             id="yt-player"
             width="0" 
             height="0" 
-            src="https://www.youtube.com/embed/{YOUTUBE_ID}?enablejsapi=1&loop=1&playlist={YOUTUBE_ID}" 
+            src="https://www.youtube.com/embed/{YOUTUBE_ID}?enablejsapi=1&autoplay=1&mute=0&loop=1&playlist={YOUTUBE_ID}" 
             frameborder="0" 
             allow="autoplay">
         </iframe>
     </div>
 
     <script>
-      function playAudio() {{
+      var isPlaying = true;
+
+      function toggleAudio() {{
         var iframe = document.getElementById('yt-player');
-        iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}}', '*');
-        var btn = document.getElementById('playBtn');
-        btn.innerText = "🎵 Reproduciendo de Fondo";
-        btn.style.backgroundColor = "#10b981";
+        var btn = document.getElementById('toggleBtn');
+        
+        if (isPlaying) {{
+          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}}', '*');
+          btn.innerText = "▶️ Reanudar Música";
+          btn.style.backgroundColor = "#10b981";
+          isPlaying = false;
+        }} else {{
+          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}}', '*');
+          btn.innerText = "⏸️ Detener / Pausar Música";
+          btn.style.backgroundColor = "#ef4444";
+          isPlaying = true;
+        }}
       }}
     </script>
     """,
@@ -282,7 +293,7 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     TEXTO ORIGINAL:
     {str(contenido)[:4000]}
 
-    Genera una respuesta estructurada strictly en {idioma}:
+    Genera una respuesta estructurada estrictamente en {idioma}:
     1. Aclaración inicial: "⚠️ *Nota de Traducción: Interpretación asistida por IA.*"
     2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas. Escríbelas así: ETIQUETAS: tag1, tag2, tag3
     3. **Contexto & Esencia**: Breve síntesis.
