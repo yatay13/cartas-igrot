@@ -30,7 +30,6 @@ def obtener_imagen_base64():
     except Exception as e:
         st.warning(f"No se pudo cargar la imagen local del Rebe: {e}")
     
-    # Imagen de respaldo online por si no encuentra el archivo local
     return "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
 
 bg_image_data = obtener_imagen_base64()
@@ -72,11 +71,16 @@ st.markdown(f"""
 if "cache_tags" not in st.session_state:
     st.session_state["cache_tags"] = {}
 
-if "query_activa" not in st.session_state:
-    st.session_state["query_activa"] = ""
+if "input_query" not in st.session_state:
+    st.session_state["input_query"] = ""
 
 if "ejecutar_busqueda" not in st.session_state:
     st.session_state["ejecutar_busqueda"] = False
+
+# --- CALLBACK PARA CATEGORÍAS RÁPIDAS ---
+def aplicar_categoria(categoria):
+    st.session_state["input_query"] = categoria
+    st.session_state["ejecutar_busqueda"] = True
 
 # --- SANITIZACIÓN DE TEXTO Y CONSULTAS ---
 def sanitizar_texto(texto: str) -> str:
@@ -174,7 +178,7 @@ base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción Erudita.</p>", unsafe_allow_html=True)
 
-# --- REPRODUCTOR DE MÚSICA DE FONDO (REPRODUCCIÓN AUTOMÁTICA + BOTÓN PAUSAR/REPRODUCIR) ---
+# --- REPRODUCTOR DE MÚSICA CONTINUA (SOLO AUDIO CON CONTROL DIRECTO DE 1 CLIC) ---
 YOUTUBE_ID = "aL-L6hQAXcY"
 
 components.html(
@@ -183,37 +187,36 @@ components.html(
         <span style="color: #cbd5e1; font-family: system-ui, sans-serif; font-size: 14px; display: block; margin-bottom: 8px;">
             🎼 <b>Música Chassídica Instrumental de Fondo</b>
         </span>
-        <button id="toggleBtn" onclick="toggleAudio()" style="background-color: #ef4444; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
-            ⏸️ Detener / Pausar Música
+        <button id="toggleBtn" onclick="toggleAudio()" style="background-color: #3b82f6; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s;">
+            ▶️ Iniciar / Pausar Música
         </button>
-        <!-- Reproductor oculto en Autoplay por defecto -->
         <iframe 
             id="yt-player"
             width="0" 
             height="0" 
-            src="https://www.youtube.com/embed/{YOUTUBE_ID}?enablejsapi=1&autoplay=1&mute=0&loop=1&playlist={YOUTUBE_ID}" 
+            src="https://www.youtube.com/embed/{YOUTUBE_ID}?enablejsapi=1&autoplay=1&loop=1&playlist={YOUTUBE_ID}" 
             frameborder="0" 
             allow="autoplay">
         </iframe>
     </div>
 
     <script>
-      var isPlaying = true;
+      var isPlaying = false;
 
       function toggleAudio() {{
         var iframe = document.getElementById('yt-player');
         var btn = document.getElementById('toggleBtn');
         
-        if (isPlaying) {{
+        if (!isPlaying) {{
+          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}}', '*');
+          btn.innerText = "⏸️ Pausar Música";
+          btn.style.backgroundColor = "#ef4444";
+          isPlaying = true;
+        }} else {{
           iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}}', '*');
           btn.innerText = "▶️ Reanudar Música";
           btn.style.backgroundColor = "#10b981";
           isPlaying = false;
-        }} else {{
-          iframe.contentWindow.postMessage('{{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}}', '*');
-          btn.innerText = "⏸️ Detener / Pausar Música";
-          btn.style.backgroundColor = "#ef4444";
-          isPlaying = true;
         }}
       }}
     </script>
@@ -230,7 +233,6 @@ tomos_disponibles = ["Todos"] + list(base_datos.keys()) if isinstance(base_datos
 with col_f1:
     raw_query = st.text_input(
         "Ingrese tema, concepto o ID:", 
-        value=st.session_state.get("query_activa", ""), 
         placeholder="Ej: Educación, Salud, Bendición...", 
         key="input_query"
     )
@@ -252,40 +254,16 @@ with col_opt1:
 with col_opt2:
     idioma_destino = st.selectbox("Idioma de traducción:", ["Español", "Hebreo Moderno", "English", "Français", "Português", "Ruso"], disabled=not generar_traduccion)
 
-# --- BOTONES DE CATEGORÍAS RÁPIDAS (EJECUCIÓN AUTOMÁTICA) ---
+# --- BOTONES DE CATEGORÍAS RÁPIDAS (CON CALLBACKS PREVIOS) ---
 st.write("📌 **Categorías Rápidas:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
 
-def seleccionar_categoria(cat_nombre):
-    st.session_state["query_activa"] = cat_nombre
-    st.session_state["input_query"] = cat_nombre
-    st.session_state["ejecutar_busqueda"] = True
-
-if col_b1.button("🩺 Salud", use_container_width=True):
-    seleccionar_categoria("Salud")
-    st.rerun()
-
-if col_b2.button("🎓 Educación", use_container_width=True):
-    seleccionar_categoria("Educación")
-    st.rerun()
-
-if col_b3.button("✨ Bendición", use_container_width=True):
-    seleccionar_categoria("Bendición")
-    st.rerun()
-
-if col_b4.button("💼 Trabajo", use_container_width=True):
-    seleccionar_categoria("Trabajo")
-    st.rerun()
-
-if col_b5.button("💍 Matrimonio", use_container_width=True):
-    seleccionar_categoria("Matrimonio")
-    st.rerun()
-
-if col_b6.button("🧹 Limpiar", use_container_width=True):
-    st.session_state["query_activa"] = ""
-    st.session_state["input_query"] = ""
-    st.session_state["ejecutar_busqueda"] = False
-    st.rerun()
+col_b1.button("🩺 Salud", use_container_width=True, on_click=aplicar_categoria, args=("Salud",))
+col_b2.button("🎓 Educación", use_container_width=True, on_click=aplicar_categoria, args=("Educación",))
+col_b3.button("✨ Bendición", use_container_width=True, on_click=aplicar_categoria, args=("Bendición",))
+col_b4.button("💼 Trabajo", use_container_width=True, on_click=aplicar_categoria, args=("Trabajo",))
+col_b5.button("💍 Matrimonio", use_container_width=True, on_click=aplicar_categoria, args=("Matrimonio",))
+col_b6.button("🧹 Limpiar", use_container_width=True, on_click=aplicar_categoria, args=("",))
 
 st.markdown("---")
 
@@ -351,14 +329,12 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
 
     return res_text, tags_extraidos
 
-# --- MOTOR DE BÚSQUEDA (SE ACTIVA VÍA BOTÓN O VÍA CATEGORÍA RÁPIDA) ---
+# --- MOTOR DE BÚSQUEDA ---
 debe_buscar = btn_buscar or st.session_state.get("ejecutar_busqueda", False)
 
 if debe_buscar:
-    # Restablecemos el indicador tras capturar la intención de búsqueda
     st.session_state["ejecutar_busqueda"] = False
-    
-    consulta_efectiva = query or st.session_state.get("query_activa", "")
+    consulta_efectiva = query
     
     if not isinstance(base_datos, dict) or not base_datos:
         st.error(f"Base de datos no disponible o inválida. Status: {origen_datos}")
