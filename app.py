@@ -346,39 +346,39 @@ if btn_buscar:
                         if len(resultados) >= cant_cartas: break
                 if len(resultados) >= cant_cartas: break
 
-        if resultados:
-            st.success(f"Se encontraron **{len(resultados)}** cartas.")
-            
-            for idx, res in enumerate(resultados, 1):
-                with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
-                    if res["tags"]:
-                        tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
-                        st.markdown(f"**Etiquetas:** {tags_html}", unsafe_allow_html=True)
-                        st.write("")
+            if resultados:
+                st.success(f"Se encontraron **{len(resultados)}** cartas.")
+                
+                for idx, res in enumerate(resultados, 1):
+                    with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
+                        if res["tags"]:
+                            tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
+                            st.markdown(f"**Etiquetas:** {tags_html}", unsafe_allow_html=True)
+                            st.write("")
 
-                    if not generar_traduccion:
-                        st.subheader("Texto Original")
-                        st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
-                    else:
-                        col1, col2 = st.columns(2)
-                        with col1:
+                        if not generar_traduccion:
                             st.subheader("Texto Original")
-                            st.text_area("Contenido:", res['contenido'], height=380, key=f"orig_{idx}")
-                        
-                        with col2:
-                            st.subheader(f"Análisis ({idioma_destino})")
-                            with st.spinner("🤖 Procesando análisis..."):
-                                traduccion, _ = traducir_y_etiquetar(
-                                    res['contenido'], 
-                                    idioma_destino, 
-                                    consulta_efectiva or filtro_fecha or "General",
-                                    res['id_carta']
-                                )
-                            st.markdown(traduccion)
-        else:
-            st.warning("No se encontraron cartas que coincidan con los filtros aplicados.")
-    except Exception as err_proc:
-        st.error(f"Ocurrió un fallo durante el procesamiento de la búsqueda: {err_proc}")
+                            st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                        else:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.subheader("Texto Original")
+                                st.text_area("Contenido:", res['contenido'], height=380, key=f"orig_{idx}")
+                            
+                            with col2:
+                                st.subheader(f"Análisis ({idioma_destino})")
+                                with st.spinner("🤖 Procesando análisis..."):
+                                    traduccion, _ = traducir_y_etiquetar(
+                                        res['contenido'], 
+                                        idioma_destino, 
+                                        consulta_efectiva or filtro_fecha or "General",
+                                        res['id_carta']
+                                    )
+                                st.markdown(traduccion)
+            else:
+                st.warning("No se encontraron cartas que coincidan con los filtros aplicados.")
+        except Exception as err_proc:
+            st.error(f"Ocurrió un fallo durante el procesamiento de la búsqueda: {err_proc}")
 
 # --- PIE DE PÁGINA ---
 st.markdown("""
