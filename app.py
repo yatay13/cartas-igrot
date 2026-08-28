@@ -67,9 +67,13 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
+# --- INICIALIZACIÓN DE ESTADOS DE SESIÓN Y CACHÉ PERSISTENTE ---
 if "cache_tags" not in st.session_state:
     st.session_state["cache_tags"] = {}
+
+# Sistema de caché para traducciones: Clave tuple (id_carta, idioma) -> Valor: (traduccion_texto, tags)
+if "cache_traducciones" not in st.session_state:
+    st.session_state["cache_traducciones"] = {}
 
 if "input_query" not in st.session_state:
     st.session_state["input_query"] = ""
@@ -198,7 +202,6 @@ components.html(
       var player;
       var isPlaying = true;
 
-      // Cargar API IFrame de YouTube de forma asíncrona
       var tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
       var firstScriptTag = document.getElementsByTagName('script')[0];
@@ -225,7 +228,6 @@ components.html(
 
       function onPlayerReady(event) {{
         event.target.playVideo();
-        // Si el navegador bloquea el audio sin interacción previa, intentamos reproducir silenciosamente o al primer clic global
         document.addEventListener('click', function unlockAudio() {{
           if (player && typeof player.playVideo === 'function' && isPlaying) {{
             player.playVideo();
@@ -329,10 +331,18 @@ def obtener_conceptos_hebreo(consulta):
 
     return [consulta_clean]
 
+# --- TRADUCCIÓN CON SISTEMA DE CACHÉ INTERNO ---
 def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     if not contenido or not str(contenido).strip():
         return "⚠️ *El texto de esta carta está vacío.*", []
 
+    # 1. VERIFICAR CACHÉ
+    clave_cache = (str(id_carta).lower(), idioma.lower())
+    if clave_cache in st.session_state["cache_traducciones"]:
+        # Retorna directamente la traducción guardada previa sin consultar a Gemini
+        return st.session_state["cache_traducciones"][clave_cache]
+
+    # 2. GENERAR NUEVA TRADUCCIÓN SI NO EXISTE EN CACHÉ
     prompt = f"""
     Eres un Rabino y erudito lingüista. Analiza la siguiente carta original del Rebe de Lubavitch:
     
@@ -362,7 +372,11 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     except Exception as e:
         st.write(f"⚠️ *Nota en procesamiento de tags:* {e}")
 
-    return res_text, tags_extraidos
+    # 3. GUARDAR EN CACHÉ DE SESIÓN PARA FUTURAS CONSULTAS
+    resultado_tupla = (res_text, tags_extraidos)
+    st.session_state["cache_traducciones"][clave_cache] = resultado_tupla
+
+    return resultado_tupla
 
 # --- MOTOR DE BÚSQUEDA ---
 debe_buscar = btn_buscar or st.session_state.get("ejecutar_busqueda", False)
@@ -440,14 +454,27 @@ if debe_buscar:
                             
                             with col2:
                                 st.subheader(f"Análisis ({idioma_destino})")
-                                with st.spinner("🤖 Procesando análisis..."):
+                                clave_c = (str(res['id_carta']).lower(), idioma_destino.lower())
+                                es_guardado = clave_c in st.session_state["cache_traducciones"]
+                                
+                                if es_guardado:
+                                    st.caption("⚡ *Cargado desde caché de la app (guardado previamente)*")
                                     traduccion, _ = traducir_y_etiquetar(
                                         res['contenido'], 
                                         idioma_destino, 
                                         consulta_efectiva or filtro_fecha or "General",
                                         res['id_carta']
                                     )
-                                st.markdown(traduccion)
+                                    st.markdown(traduccion)
+                                else:
+                                    with st.spinner("🤖 Procesando análisis con IA..."):
+                                        traduccion, _ = traducir_y_etiquetar(
+                                            res['contenido'], 
+                                            idioma_destino, 
+                                            consulta_efectiva or filtro_fecha or "General",
+                                            res['id_carta']
+                                        )
+                                    st.markdown(traduccion)
             else:
                 st.warning("No se encontraron cartas que coincidan con los filtros aplicados.")
         except Exception as err_proc:
