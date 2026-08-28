@@ -6,6 +6,7 @@ import zipfile
 import base64
 import gdown
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -16,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- CODIFICACIÓN BASE64 SEGURA PARA EL FONDO (PREVIENE BUG DE RUTAS) ---
+# --- CODIFICACIÓN BASE64 SEGURA PARA EL FONDO DE PANTALLA ---
 @st.cache_data(show_spinner=False)
 def obtener_imagen_base64():
     try:
@@ -29,7 +30,7 @@ def obtener_imagen_base64():
     except Exception as e:
         st.warning(f"No se pudo cargar la imagen local del Rebe: {e}")
     
-    # Imagen de respaldo alta calidad en web si la local no existe
+    # Imagen de respaldo online por si no encuentra el archivo local
     return "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
 
 bg_image_data = obtener_imagen_base64()
@@ -64,24 +65,17 @@ st.markdown(f"""
         font-weight: 600; border-top: 1px solid #334155;
         backdrop-filter: blur(8px); z-index: 999;
     }}
-    .audio-card {{
-        background: rgba(30, 41, 59, 0.85);
-        padding: 15px 20px;
-        border-radius: 12px;
-        border: 1px solid #334155;
-        margin-bottom: 25px;
-    }}
     </style>
 """, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN DE ESTADOS ---
+# --- INICIALIZACIÓN DE ESTADOS DE SESIÓN ---
 if "cache_tags" not in st.session_state:
     st.session_state["cache_tags"] = {}
 
 if "query_activa" not in st.session_state:
     st.session_state["query_activa"] = ""
 
-# --- SANITIZACIÓN ---
+# --- SANITIZACIÓN DE TEXTO Y CONSULTAS ---
 def sanitizar_texto(texto: str) -> str:
     if not texto: return ""
     try:
@@ -91,7 +85,7 @@ def sanitizar_texto(texto: str) -> str:
     except Exception:
         return ""
 
-# --- CLIENTE Y MODELOS DE GEMINI CON MANEJO DE ERRORES ---
+# --- CONFIGURACIÓN Y CLIENTE GEMINI CON CONTROL DE ERRORES ---
 API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 ID_DRIVE = "1ARt_qkxwuGIKeA7LkKSITbzo4Q_w7Pzk"
 
@@ -101,7 +95,7 @@ def obtener_cliente_gemini(api_key):
         try:
             return genai.Client(api_key=api_key.strip())
         except Exception as e:
-            st.error(f"Error al inicializar GenAI Client: {e}")
+            st.error(f"Error al inicializar cliente GenAI: {e}")
             return None
     return None
 
@@ -121,13 +115,13 @@ def obtener_modelos_dinamicos():
 
 def ejecutar_gemini(prompt):
     if not client:
-        return None, "Cliente IA no inicializado. Verifique la API Key."
+        return None, "Cliente IA no inicializado. Verifique la clave GEMINI_API_KEY en Secrets."
     
     modelos_api = obtener_modelos_dinamicos()
     candidatos = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
     modelos_a_probar = list(dict.fromkeys([m for m in modelos_api if "flash" in m or "pro" in m] + candidatos))
     
-    ultimo_error = "Ningún modelo respondió."
+    ultimo_error = "Ningún modelo de IA respondió a la solicitud."
     for m in modelos_a_probar:
         try:
             res = client.models.generate_content(model=m, contents=prompt)
@@ -139,20 +133,20 @@ def ejecutar_gemini(prompt):
             
     return None, ultimo_error
 
-# --- CARGA DE BASE DE DATOS RESISTENTE A FALLOS ---
+# --- CARGA DEFENSIVA DE BASE DE DATOS ---
 @st.cache_data(ttl=3600, show_spinner=False)
 def cargar_datos_drive(file_id):
     archivo_local = "base_datos_descargada"
     if not os.path.exists(archivo_local):
         url_drive = f"https://drive.google.com/uc?id={file_id}"
         try:
-            with st.spinner("📦 Descargando base de datos por única vez..."):
+            with st.spinner("📦 Cargando base de datos por única vez..."):
                 gdown.download(url_drive, archivo_local, quiet=False)
         except Exception as e:
-            return {}, f"Error descargando datos: {e}"
+            return {}, f"Error al descargar la base de datos: {e}"
 
     if not os.path.exists(archivo_local):
-        return {}, "El archivo descargado no existe."
+        return {}, "El archivo descargado no existe en el disco."
 
     try:
         with open(archivo_local, "r", encoding="utf-8") as f:
@@ -167,47 +161,42 @@ def cargar_datos_drive(file_id):
                 with z.open(nombres_json[0]) as f:
                     return json.load(f), "ZIP Extraído"
     except Exception as e:
-        return {}, f"Error leyendo ZIP/JSON: {e}"
+        return {}, f"Error extrayendo JSON/ZIP: {e}"
 
-    return {}, "Formato de base de datos no reconocido."
+    return {}, "Formato de base de datos no válido."
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
-# --- CABECERA ---
+# --- CABECERA DE LA APLICACIÓN ---
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Fondo Personalizado y Playlist Directa.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente de Búsqueda y Traducción Erudita.</p>", unsafe_allow_html=True)
 
-# --- PLAYLIST EXTENSA DE NIGUNIM DE JABAD (AUDIOS VALIDADOS EN INTERNET ARCHIVE) ---
-PLAYLIST_NIGUNIM = {
-    "Tzama Lecha Nafshi (Alter Rebe)": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_07.mp3",
-    "Ach Leilokim Domi Nafshi": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_12.mp3",
-    "Rostover Nigun": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_05.mp3",
-    "Nigun D'veikus": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_04.mp3",
-    "Nigun Rebbe Maharash": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_02.mp3",
-    "Nigun Simcha": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_06.mp3",
-    "Kol Dodi": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_07.mp3",
-    "Podo V'sholom": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_08.mp3",
-    "Napoleon's March": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_13.mp3",
-    "Nigun M'sorosi": "https://ia800203.us.archive.org/16/items/lp_chabad-nigunim-volume-3_lubavitcher-chassidim/track_13.mp3"
-}
+# --- REPRODUCTOR DE MÚSICA DE FONDO (YOUTUBE EMBED) ---
+YOUTUBE_ID = "aL-L6hQAXcY"
 
-st.markdown('<div class="audio-card">', unsafe_allow_html=True)
-col_aud1, col_aud2 = st.columns([1.5, 2.5])
+components.html(
+    f"""
+    <div style="background: rgba(30, 41, 59, 0.85); padding: 12px 18px; border-radius: 10px; border: 1px solid #334155; text-align: center;">
+        <span style="color: #cbd5e1; font-family: system-ui, sans-serif; font-size: 14px;">
+            🎼 <b>Música Chassídica Instrumental de Fondo (9 Horas Continuas)</b>
+        </span>
+        <div style="margin-top: 8px;">
+            <iframe 
+                width="100%" 
+                height="90" 
+                src="https://www.youtube.com/embed/{YOUTUBE_ID}?autoplay=1&loop=1&playlist={YOUTUBE_ID}" 
+                frameborder="0" 
+                allow="autoplay; encrypted-media">
+            </iframe>
+        </div>
+    </div>
+    """,
+    height=140
+)
 
-with col_aud1:
-    nigun_sel = st.selectbox("🎵 Playlist de Nigunim Tradicionales:", list(PLAYLIST_NIGUNIM.keys()))
+st.divider()
 
-with col_aud2:
-    url_pista = PLAYLIST_NIGUNIM.get(nigun_sel, "")
-    if url_pista:
-        try:
-            st.audio(url_pista, format="audio/mp3", autoplay=True)
-        except Exception as err_aud:
-            st.error(f"Error reproduciendo audio: {err_aud}")
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# --- CONTROLES DE BÚSQUEDA Y FILTROS ---
+# --- FILTROS Y CONTROLES DE BÚSQUEDA ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if isinstance(base_datos, dict) and base_datos else ["Todos"]
 
@@ -231,7 +220,7 @@ with col_opt1:
 with col_opt2:
     idioma_destino = st.selectbox("Idioma de traducción:", ["Español", "Hebreo Moderno", "English", "Français", "Português", "Ruso"], disabled=not generar_traduccion)
 
-# --- BOTONES DE CATEGORÍAS ---
+# --- BOTONES DE CATEGORÍAS RÁPIDAS ---
 st.write("📌 **Categorías Rápidas:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
 if col_b1.button("🩺 Salud", use_container_width=True): st.session_state["query_activa"] = "Salud"
@@ -245,7 +234,7 @@ st.markdown("---")
 
 btn_buscar = st.button("🔍 Realizar Búsqueda Avanzada", type="primary", use_container_width=True)
 
-# --- MAPEO DE RESPALDO EN HEBREO ---
+# --- DICCIONARIO BASE EN HEBREO ---
 DICCIONARIO_RESPALDO = {
     "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא", "חולה"],
     "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד"],
@@ -305,12 +294,12 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
 
     return res_text, tags_extraidos
 
-# --- PROCESAMIENTO DE BÚSQUEDA DEFENSIVO ---
+# --- MOTOR DE BÚSQUEDA EXCLUSIVO AL HACER CLIC ---
 if btn_buscar:
     consulta_efectiva = query or st.session_state.get("query_activa", "")
     
     if not isinstance(base_datos, dict) or not base_datos:
-        st.error(f"Base de datos no disponible o inválida. {origen_datos}")
+        st.error(f"Base de datos no disponible o inválida. Status: {origen_datos}")
     else:
         try:
             es_hebreo = bool(re.search(r'[\u0590-\u05FF]', consulta_efectiva)) if consulta_efectiva else False
@@ -318,7 +307,7 @@ if btn_buscar:
             
             if consulta_efectiva:
                 badges_html = "".join([f"<span class='badge'>{t}</span>" for t in terminos])
-                st.markdown(f"🎯 **Términos Aplicados:** {badges_html}", unsafe_allow_html=True)
+                st.markdown(f"🎯 **Términos de Búsqueda:** {badges_html}", unsafe_allow_html=True)
 
             resultados = []
             for tomo, info in base_datos.items():
@@ -357,41 +346,41 @@ if btn_buscar:
                         if len(resultados) >= cant_cartas: break
                 if len(resultados) >= cant_cartas: break
 
-            if resultados:
-                st.success(f"Se encontraron **{len(resultados)}** cartas.")
-                
-                for idx, res in enumerate(resultados, 1):
-                    with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
-                        if res["tags"]:
-                            tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
-                            st.markdown(f"**Etiquetas:** {tags_html}", unsafe_allow_html=True)
-                            st.write("")
+        if resultados:
+            st.success(f"Se encontraron **{len(resultados)}** cartas.")
+            
+            for idx, res in enumerate(resultados, 1):
+                with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
+                    if res["tags"]:
+                        tags_html = "".join([f"<span class='badge-tag'>🏷️ {t}</span>" for t in res["tags"]])
+                        st.markdown(f"**Etiquetas:** {tags_html}", unsafe_allow_html=True)
+                        st.write("")
 
-                        if not generar_traduccion:
+                    if not generar_traduccion:
+                        st.subheader("Texto Original")
+                        st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
+                    else:
+                        col1, col2 = st.columns(2)
+                        with col1:
                             st.subheader("Texto Original")
-                            st.text_area("Contenido:", res['contenido'], height=350, key=f"orig_{idx}")
-                        else:
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.subheader("Texto Original")
-                                st.text_area("Contenido:", res['contenido'], height=380, key=f"orig_{idx}")
-                            
-                            with col2:
-                                st.subheader(f"Análisis ({idioma_destino})")
-                                with st.spinner("🤖 Procesando carta..."):
-                                    traduccion, _ = traducir_y_etiquetar(
-                                        res['contenido'], 
-                                        idioma_destino, 
-                                        consulta_efectiva or filtro_fecha or "General",
-                                        res['id_carta']
-                                    )
-                                st.markdown(traduccion)
-            else:
-                st.warning("No se encontraron cartas con esos términos de búsqueda.")
-        except Exception as err_proc:
-            st.error(f"Error inesperado durante la búsqueda: {err_proc}")
+                            st.text_area("Contenido:", res['contenido'], height=380, key=f"orig_{idx}")
+                        
+                        with col2:
+                            st.subheader(f"Análisis ({idioma_destino})")
+                            with st.spinner("🤖 Procesando análisis..."):
+                                traduccion, _ = traducir_y_etiquetar(
+                                    res['contenido'], 
+                                    idioma_destino, 
+                                    consulta_efectiva or filtro_fecha or "General",
+                                    res['id_carta']
+                                )
+                            st.markdown(traduccion)
+        else:
+            st.warning("No se encontraron cartas que coincidan con los filtros aplicados.")
+    except Exception as err_proc:
+        st.error(f"Ocurrió un fallo durante el procesamiento de la búsqueda: {err_proc}")
 
-# --- FOOTER ---
+# --- PIE DE PÁGINA ---
 st.markdown("""
     <div class="footer">
         Hecho por: Ariel Lichinizer y Eitan Embon
