@@ -75,6 +75,9 @@ if "cache_tags" not in st.session_state:
 if "query_activa" not in st.session_state:
     st.session_state["query_activa"] = ""
 
+if "ejecutar_busqueda" not in st.session_state:
+    st.session_state["ejecutar_busqueda"] = False
+
 # --- SANITIZACIÓN DE TEXTO Y CONSULTAS ---
 def sanitizar_texto(texto: str) -> str:
     if not texto: return ""
@@ -225,7 +228,12 @@ col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if isinstance(base_datos, dict) and base_datos else ["Todos"]
 
 with col_f1:
-    raw_query = st.text_input("Ingrese tema, concepto o ID:", value=st.session_state.get("query_activa", ""), placeholder="Ej: Educación, Salud, Bendición...", key="input_query")
+    raw_query = st.text_input(
+        "Ingrese tema, concepto o ID:", 
+        value=st.session_state.get("query_activa", ""), 
+        placeholder="Ej: Educación, Salud, Bendición...", 
+        key="input_query"
+    )
     query = sanitizar_texto(raw_query)
 
 with col_f2:
@@ -244,15 +252,40 @@ with col_opt1:
 with col_opt2:
     idioma_destino = st.selectbox("Idioma de traducción:", ["Español", "Hebreo Moderno", "English", "Français", "Português", "Ruso"], disabled=not generar_traduccion)
 
-# --- BOTONES DE CATEGORÍAS RÁPIDAS ---
+# --- BOTONES DE CATEGORÍAS RÁPIDAS (EJECUCIÓN AUTOMÁTICA) ---
 st.write("📌 **Categorías Rápidas:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
-if col_b1.button("🩺 Salud", use_container_width=True): st.session_state["query_activa"] = "Salud"
-if col_b2.button("🎓 Educación", use_container_width=True): st.session_state["query_activa"] = "Educación"
-if col_b3.button("✨ Bendición", use_container_width=True): st.session_state["query_activa"] = "Bendición"
-if col_b4.button("💼 Trabajo", use_container_width=True): st.session_state["query_activa"] = "Trabajo"
-if col_b5.button("💍 Matrimonio", use_container_width=True): st.session_state["query_activa"] = "Matrimonio"
-if col_b6.button("🧹 Limpiar", use_container_width=True): st.session_state["query_activa"] = ""
+
+def seleccionar_categoria(cat_nombre):
+    st.session_state["query_activa"] = cat_nombre
+    st.session_state["input_query"] = cat_nombre
+    st.session_state["ejecutar_busqueda"] = True
+
+if col_b1.button("🩺 Salud", use_container_width=True):
+    seleccionar_categoria("Salud")
+    st.rerun()
+
+if col_b2.button("🎓 Educación", use_container_width=True):
+    seleccionar_categoria("Educación")
+    st.rerun()
+
+if col_b3.button("✨ Bendición", use_container_width=True):
+    seleccionar_categoria("Bendición")
+    st.rerun()
+
+if col_b4.button("💼 Trabajo", use_container_width=True):
+    seleccionar_categoria("Trabajo")
+    st.rerun()
+
+if col_b5.button("💍 Matrimonio", use_container_width=True):
+    seleccionar_categoria("Matrimonio")
+    st.rerun()
+
+if col_b6.button("🧹 Limpiar", use_container_width=True):
+    st.session_state["query_activa"] = ""
+    st.session_state["input_query"] = ""
+    st.session_state["ejecutar_busqueda"] = False
+    st.rerun()
 
 st.markdown("---")
 
@@ -318,8 +351,13 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
 
     return res_text, tags_extraidos
 
-# --- MOTOR DE BÚSQUEDA EXCLUSIVO AL HACER CLIC ---
-if btn_buscar:
+# --- MOTOR DE BÚSQUEDA (SE ACTIVA VÍA BOTÓN O VÍA CATEGORÍA RÁPIDA) ---
+debe_buscar = btn_buscar or st.session_state.get("ejecutar_busqueda", False)
+
+if debe_buscar:
+    # Restablecemos el indicador tras capturar la intención de búsqueda
+    st.session_state["ejecutar_busqueda"] = False
+    
     consulta_efectiva = query or st.session_state.get("query_activa", "")
     
     if not isinstance(base_datos, dict) or not base_datos:
