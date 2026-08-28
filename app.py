@@ -12,38 +12,55 @@ st.set_page_config(
     page_title="Igrot Kodesh - AI Premium",
     page_icon="📜",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS (FONDO Y DISEÑO PREMIUM) ---
-st.markdown("""
+# --- DETECCION DE RUTA DE IMAGEN DEL REBE PARA EL FONDO ---
+imagen_fondo = ""
+if os.path.exists("rebe.jpg"):
+    imagen_fondo = "rebe.jpg"
+elif os.path.exists("rebe.png"):
+    imagen_fondo = "rebe.png"
+else:
+    imagen_fondo = "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop"
+
+# --- ESTILOS CSS CON FONDO DE LA FOTO DEL REBE ---
+st.markdown(f"""
     <style>
-    /* Fondo con imagen y superposición oscura */
-    .stApp {
-        background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), 
-                    url("https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop");
+    /* Fondo principal usando la imagen del Rebe con superposición oscura */
+    .stApp {{
+        background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.94)), 
+                    url("{imagen_fondo}");
         background-size: cover;
+        background-position: center top;
         background-attachment: fixed;
         color: #f8fafc;
-    }
+    }}
     
-    .badge {
+    .badge {{
         background-color: #3b82f6; color: white; padding: 4px 10px;
         border-radius: 6px; font-size: 12px; font-weight: 600;
         display: inline-block; margin-right: 5px; margin-bottom: 5px;
-    }
-    .badge-tag {
+    }}
+    .badge-tag {{
         background-color: #10b981; color: white; padding: 3px 8px;
         border-radius: 4px; font-size: 11px; font-weight: 600;
         display: inline-block; margin-right: 4px;
-    }
-    .footer {
+    }}
+    .footer {{
         position: fixed; left: 0; bottom: 0; width: 100%;
         background-color: rgba(15, 23, 42, 0.95); color: #94a3b8;
         text-align: center; padding: 10px 0px; font-size: 13px;
         font-weight: 600; border-top: 1px solid #334155;
         backdrop-filter: blur(8px); z-index: 999;
-    }
+    }}
+    .audio-container {{
+        background: rgba(30, 41, 59, 0.7);
+        padding: 12px 20px;
+        border-radius: 10px;
+        border: 1px solid #334155;
+        margin-bottom: 20px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,25 +156,34 @@ def cargar_datos_drive(file_id):
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
-# --- BARRA LATERAL: MÚSICA Y CONFIGURACIÓN ---
-with st.sidebar:
-    st.header("🎵 Música de Fondo")
-    st.caption("Ambiente Nigunim / Instrumental")
-    # Reproductor de audio embebido (puedes reemplazar la URL por tu archivo local o link directo)
-    st.audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", format="audio/mp3")
-    st.divider()
-    st.caption("Configuración de Plataforma v2.5")
-
 # --- CABECERA ---
-col_img1, col_img2, col_img3 = st.columns([1.8, 1, 1.8])
-with col_img2:
-    if os.path.exists("rebe.jpg"):
-        st.image("rebe.jpg", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
-    elif os.path.exists("rebe.png"):
-        st.image("rebe.png", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
-
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Selección Precisa de Cartas.</p>", unsafe_allow_html=True)
+
+# --- PLAYLIST DE NIGUNIM TRANQUILOS (ACTIVADA POR DEFECTO) ---
+PLAYLIST_NIGUNIM = {
+    "Tzama Lecha Nafshi (Meditación Chassidica)": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_07.mp3",
+    "Nigun D'veikus (Conexión Profunda)": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_04.mp3",
+    "Rostover Nigun (Melodía de Rostov)": "https://ia800206.us.archive.org/30/items/lp_chabad-nigunim-vol2_lubavitcher-chassidim/track_05.mp3",
+    "Ach Leilokim Domi Nafshi": "https://ia801406.us.archive.org/5/items/lp_nhaha-niguni-hasidi-habd_lubavitcher-chassidim/track_12.mp3"
+}
+
+col_audio1, col_audio2 = st.columns([1, 2])
+with col_audio1:
+    nigun_seleccionado = st.selectbox("🎵 Playlist Nigunim de Jabad:", list(PLAYLIST_NIGUNIM.keys()))
+
+with col_audio2:
+    url_pista = PLAYLIST_NIGUNIM[nigun_seleccionado]
+    # Embebido con autoplay directo en la interfaz principal
+    st.markdown(f"""
+        <div class="audio-container">
+            <audio controls autoplay style="width: 100%;">
+                <source src="{url_pista}" type="audio/mp3">
+                Tu navegador no soporta el elemento de audio.
+            </audio>
+        </div>
+    """, unsafe_allow_html=True)
+
 st.divider()
 
 # --- CONTROLES DE BÚSQUEDA ---
@@ -187,18 +213,12 @@ with col_opt2:
 # --- BOTONES DE ACCESO RÁPIDO ---
 st.write("📌 **Categorías Principales:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
-if col_b1.button("🩺 Salud", use_container_width=True): 
-    st.session_state["query_activa"] = "Salud"
-if col_b2.button("🎓 Educación", use_container_width=True): 
-    st.session_state["query_activa"] = "Educación"
-if col_b3.button("✨ Bendición", use_container_width=True): 
-    st.session_state["query_activa"] = "Bendición"
-if col_b4.button("💼 Trabajo", use_container_width=True): 
-    st.session_state["query_activa"] = "Trabajo"
-if col_b5.button("💍 Matrimonio", use_container_width=True): 
-    st.session_state["query_activa"] = "Matrimonio"
-if col_b6.button("🧹 Limpiar", use_container_width=True): 
-    st.session_state["query_activa"] = ""
+if col_b1.button("🩺 Salud", use_container_width=True): st.session_state["query_activa"] = "Salud"
+if col_b2.button("🎓 Educación", use_container_width=True): st.session_state["query_activa"] = "Educación"
+if col_b3.button("✨ Bendición", use_container_width=True): st.session_state["query_activa"] = "Bendición"
+if col_b4.button("💼 Trabajo", use_container_width=True): st.session_state["query_activa"] = "Trabajo"
+if col_b5.button("💍 Matrimonio", use_container_width=True): st.session_state["query_activa"] = "Matrimonio"
+if col_b6.button("🧹 Limpiar", use_container_width=True): st.session_state["query_activa"] = ""
 
 st.markdown("---")
 
@@ -220,7 +240,6 @@ def obtener_conceptos_hebreo(consulta):
     if not consulta: return []
     consulta_clean = consulta.lower().strip()
     
-    # Priorizar búsqueda local si está en el diccionario para mayor velocidad y precisión
     if consulta_clean in DICCIONARIO_RESPALDO:
         return DICCIONARIO_RESPALDO[consulta_clean]
 
@@ -241,7 +260,7 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     TEXTO ORIGINAL:
     {contenido[:4000]}
 
-    Genera una respuesta estructurada estrictamente en {idioma}:
+    Genera una respuesta estructurada strictly en {idioma}:
     1. Aclaración inicial: "⚠️ *Nota de Traducción: Interpretación asistida por IA.*"
     2. **Etiquetas_Clave**: Genera de 3 a 5 palabras clave temáticas descriptivas de la carta (ejemplo: Salud, Parnasá, Educación, Bitajón). Escríbelas en la línea exactamente así: ETIQUETAS: tag1, tag2, tag3
     3. **Contexto & Esencia**: Breve síntesis.
@@ -285,7 +304,6 @@ if btn_buscar:
             for carta in info.get("cartas", []):
                 texto = carta.get("contenido", "")
                 
-                # Descartar cartas vacías
                 if not texto or not texto.strip():
                     continue
                     
@@ -293,7 +311,6 @@ if btn_buscar:
                 id_carta = str(carta.get("id_carta", "")).lower()
                 cached_tags = st.session_state["cache_tags"].get(id_carta, [])
                 
-                # Coincidencia precisa por Texto, ID o Etiquetas en caché
                 coincide_termino = False
                 if terminos:
                     coincide_termino = (
