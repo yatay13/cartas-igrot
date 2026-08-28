@@ -12,13 +12,21 @@ st.set_page_config(
     page_title="Igrot Kodesh - AI Premium",
     page_icon="📜",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# --- ESTILOS CSS PERSONALIZADOS ---
+# --- ESTILOS CSS PERSONALIZADOS (FONDO Y DISEÑO PREMIUM) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #0f172a; color: #f8fafc; }
+    /* Fondo con imagen y superposición oscura */
+    .stApp {
+        background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), 
+                    url("https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=2000&auto=format&fit=crop");
+        background-size: cover;
+        background-attachment: fixed;
+        color: #f8fafc;
+    }
+    
     .badge {
         background-color: #3b82f6; color: white; padding: 4px 10px;
         border-radius: 6px; font-size: 12px; font-weight: 600;
@@ -66,36 +74,27 @@ def obtener_cliente_gemini(api_key):
 
 client = obtener_cliente_gemini(API_KEY)
 
-# --- OBTENER LISTA DE MODELOS VÁLIDOS DE LA API ---
+# --- OBTENER MODELOS VÁLIDOS DE LA API ---
 @st.cache_resource
 def obtener_modelos_dinamicos():
-    if not client:
-        return []
+    if not client: return []
     try:
         modelos_disponibles = []
         for m in client.models.list():
-            # Extraer solo el identificador limpio del modelo
             nombre = m.name.split("/")[-1] if "/" in m.name else m.name
             modelos_disponibles.append(nombre)
         return modelos_disponibles
     except Exception:
         return []
 
-# --- EJECUTOR DE GEMINI CON RESPALDO AUTOMÁTICO DINÁMICO ---
+# --- EJECUTOR GEMINI CON RESPALDO ---
 def ejecutar_gemini(prompt):
     if not client:
         return None, "Cliente no inicializado. Revisa la GEMINI_API_KEY en Secrets."
     
-    # 1. Obtener modelos reales permitidos por la API del usuario
     modelos_api = obtener_modelos_dinamicos()
-    
-    # 2. Lista prioritaria de respaldos si no se puede listar
     candidatos_por_defecto = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
-    
-    # Combinar modelos detectados prioritariamente
     modelos_a_probar = [m for m in modelos_api if "flash" in m or "pro" in m] + candidatos_por_defecto
-    
-    # Eliminar duplicados manteniendo orden
     modelos_unicos = list(dict.fromkeys(modelos_a_probar))
     
     ultimo_error = ""
@@ -140,6 +139,15 @@ def cargar_datos_drive(file_id):
 
 base_datos, origen_datos = cargar_datos_drive(ID_DRIVE)
 
+# --- BARRA LATERAL: MÚSICA Y CONFIGURACIÓN ---
+with st.sidebar:
+    st.header("🎵 Música de Fondo")
+    st.caption("Ambiente Nigunim / Instrumental")
+    # Reproductor de audio embebido (puedes reemplazar la URL por tu archivo local o link directo)
+    st.audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", format="audio/mp3")
+    st.divider()
+    st.caption("Configuración de Plataforma v2.5")
+
 # --- CABECERA ---
 col_img1, col_img2, col_img3 = st.columns([1.8, 1, 1.8])
 with col_img2:
@@ -149,10 +157,10 @@ with col_img2:
         st.image("rebe.png", caption="Menachem Mendel Schneerson - El Rebe de Lubavitch", use_container_width=True)
 
 st.markdown("<h1 style='text-align: center;'>📜 Buscador de Igrot Kodesh</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Sistema Dinámico de Etiquetado.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #94a3b8;'>Plataforma Inteligente con Selección Precisa de Cartas.</p>", unsafe_allow_html=True)
 st.divider()
 
-# --- CONTROLES Y BUSCADOR ---
+# --- CONTROLES DE BÚSQUEDA ---
 col_f1, col_f2, col_f3, col_f4 = st.columns([2.5, 1.5, 1.2, 1])
 tomos_disponibles = ["Todos"] + list(base_datos.keys()) if base_datos else ["Todos"]
 
@@ -179,36 +187,49 @@ with col_opt2:
 # --- BOTONES DE ACCESO RÁPIDO ---
 st.write("📌 **Categorías Principales:**")
 col_b1, col_b2, col_b3, col_b4, col_b5, col_b6 = st.columns(6)
-if col_b1.button("🩺 Salud", use_container_width=True): st.session_state["query_activa"] = "Salud"; st.rerun()
-if col_b2.button("🎓 Educación", use_container_width=True): st.session_state["query_activa"] = "Educación"; st.rerun()
-if col_b3.button("✨ Bendición", use_container_width=True): st.session_state["query_activa"] = "Bendición"; st.rerun()
-if col_b4.button("💼 Trabajo", use_container_width=True): st.session_state["query_activa"] = "Trabajo"; st.rerun()
-if col_b5.button("💍 Matrimonio", use_container_width=True): st.session_state["query_activa"] = "Matrimonio"; st.rerun()
-if col_b6.button("🧹 Limpiar", use_container_width=True): st.session_state["query_activa"] = ""; st.rerun()
+if col_b1.button("🩺 Salud", use_container_width=True): 
+    st.session_state["query_activa"] = "Salud"
+if col_b2.button("🎓 Educación", use_container_width=True): 
+    st.session_state["query_activa"] = "Educación"
+if col_b3.button("✨ Bendición", use_container_width=True): 
+    st.session_state["query_activa"] = "Bendición"
+if col_b4.button("💼 Trabajo", use_container_width=True): 
+    st.session_state["query_activa"] = "Trabajo"
+if col_b5.button("💍 Matrimonio", use_container_width=True): 
+    st.session_state["query_activa"] = "Matrimonio"
+if col_b6.button("🧹 Limpiar", use_container_width=True): 
+    st.session_state["query_activa"] = ""
 
 st.markdown("---")
+
+# BOTÓN ÚNICO DE ACTIVACIÓN DE BÚSQUEDA
 btn_buscar = st.button("🔍 Realizar Búsqueda Avanzada", type="primary", use_container_width=True)
 
-# --- DICCIONARIO BASE ---
+# --- DICCIONARIO BASE ENRIQUECIDO ---
 DICCIONARIO_RESPALDO = {
-    "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא"],
-    "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה"],
-    "educación": ["חינוך", "חינוך ילדים", "תלמוד תורה"],
-    "bendicion": ["ברכה", "ברכה והצלחה", "אגרת"],
-    "bendición": ["ברכה", "ברכה והצלחה", "אגרת"],
-    "trabajo": ["פרנסה", "עבודה", "מסחר"],
-    "matrimonio": ["שידוך", "חתונה", "זיווג"]
+    "salud": ["רפואה", "רפואה שלימה", "בריאות", "רופא", "חולה"],
+    "educacion": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד", "בית ספר"],
+    "educación": ["חינוך", "חינוך ילדים", "תלמוד תורה", "מלמד", "בית ספר"],
+    "bendicion": ["ברכה", "ברכה והצלחה", "אגרת", "בברכה"],
+    "bendición": ["ברכה", "ברכה והצלחה", "אגרת", "בברכה"],
+    "trabajo": ["פרנסה", "עבודה", "מסחר", "עסק"],
+    "matrimonio": ["שידוך", "חתונה", "זיווג", "חתן", "כלה"]
 }
 
 def obtener_conceptos_hebreo(consulta):
     if not consulta: return []
-    prompt = f"Proporciona entre 4 y 7 términos clave en HEBREO asociados a '{consulta}' en las cartas del Rebe. Responde SOLO palabras en hebreo separadas por comas."
+    consulta_clean = consulta.lower().strip()
+    
+    # Priorizar búsqueda local si está en el diccionario para mayor velocidad y precisión
+    if consulta_clean in DICCIONARIO_RESPALDO:
+        return DICCIONARIO_RESPALDO[consulta_clean]
+
+    prompt = f"Proporciona entre 4 y 7 términos clave en HEBREO asociados a '{consulta}' en las cartas del Rebe de Lubavitch. Responde SOLO palabras en hebreo separadas por comas."
     res_text, _ = ejecutar_gemini(prompt)
     if res_text:
         return [t.strip().lower() for t in res_text.split(',') if t.strip()]
 
-    consulta_clean = consulta.lower().strip()
-    return DICCIONARIO_RESPALDO.get(consulta_clean, [consulta_clean])
+    return [consulta_clean]
 
 def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
     if not contenido or not contenido.strip():
@@ -242,10 +263,10 @@ def traducir_y_etiquetar(contenido, idioma, tema, id_carta):
 
     return res_text, tags_extraidos
 
-# --- MOTOR DE BÚSQUEDA ---
-consulta_efectiva = query or st.session_state["query_activa"]
-
-if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todos":
+# --- MOTOR DE BÚSQUEDA EXCLUSIVO POR BOTÓN ---
+if btn_buscar:
+    consulta_efectiva = query or st.session_state["query_activa"]
+    
     if not base_datos:
         st.error("Base de datos no disponible.")
     else:
@@ -254,7 +275,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
         
         if consulta_efectiva:
             badges_html = "".join([f"<span class='badge'>{t}</span>" for t in terminos])
-            st.markdown(f"🎯 **Conceptos e Hilos de Búsqueda:** {badges_html}", unsafe_allow_html=True)
+            st.markdown(f"🎯 **Términos de Búsqueda Aplicados:** {badges_html}", unsafe_allow_html=True)
 
         resultados = []
         for tomo, info in base_datos.items():
@@ -264,6 +285,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
             for carta in info.get("cartas", []):
                 texto = carta.get("contenido", "")
                 
+                # Descartar cartas vacías
                 if not texto or not texto.strip():
                     continue
                     
@@ -271,10 +293,15 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                 id_carta = str(carta.get("id_carta", "")).lower()
                 cached_tags = st.session_state["cache_tags"].get(id_carta, [])
                 
-                coincide_termino = (
-                    any(t in texto_lower or t == id_carta for t in terminos) or
-                    any(c_tag in consulta_efectiva.lower() for c_tag in cached_tags)
-                ) if terminos else True
+                # Coincidencia precisa por Texto, ID o Etiquetas en caché
+                coincide_termino = False
+                if terminos:
+                    coincide_termino = (
+                        any(t in texto_lower or t in id_carta for t in terminos) or
+                        any(c_tag in consulta_efectiva.lower() for c_tag in cached_tags)
+                    )
+                else:
+                    coincide_termino = True
                 
                 coincide_fecha = (filtro_fecha.lower() in texto_lower or filtro_fecha.lower() in tomo.lower()) if filtro_fecha else True
                 
@@ -289,7 +316,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
             if len(resultados) >= cant_cartas: break
 
         if resultados:
-            st.success(f"Se encontraron **{len(resultados)}** cartas válidas con contenido.")
+            st.success(f"Se encontraron **{len(resultados)}** cartas relevantes con contenido real.")
             
             for idx, res in enumerate(resultados, 1):
                 with st.expander(f"📜 Carta {idx} | ID: {res['id_carta']} | {res['tomo']}", expanded=True):
@@ -318,7 +345,7 @@ if btn_buscar or consulta_efectiva or filtro_fecha or tomo_seleccionado != "Todo
                                 )
                             st.markdown(traduccion)
         else:
-            st.warning("No se encontraron cartas válidas que contengan texto real coincidente con los filtros.")
+            st.warning("No se encontraron cartas que contengan los términos o temas especificados.")
 
 # --- FOOTER ---
 st.markdown("""
